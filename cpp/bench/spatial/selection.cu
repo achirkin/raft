@@ -34,6 +34,7 @@ struct params {
   int input_len;
   int k;
   int select_min;
+  int no_in_ids;
 };
 
 template <typename KeyT, typename IdxT, raft::spatial::knn::SelectKAlgo Algo>
@@ -52,14 +53,15 @@ struct selection : public fixture {
 
   void run_benchmark(::benchmark::State& state) override
   {
-    using_pool_memory_res res;
     try {
+      using_pool_memory_res res(size_t(5) << size_t(30), size_t(60) << size_t(30));
       std::ostringstream label_stream;
       label_stream << params_.n_inputs << "#" << params_.input_len << "#" << params_.k;
+      if (params_.no_in_ids) { label_stream << "#noids"; };
       state.SetLabel(label_stream.str());
       loop_on_state(state, [this]() {
         raft::spatial::knn::select_k<IdxT, KeyT>(in_dists_.data(),
-                                                 in_ids_.data(),
+                                                 params_.no_in_ids ? nullptr : in_ids_.data(),
                                                  params_.n_inputs,
                                                  params_.input_len,
                                                  out_dists_.data(),
@@ -71,6 +73,8 @@ struct selection : public fixture {
       });
     } catch (raft::exception& e) {
       state.SkipWithError(e.what());
+    } catch (std::bad_alloc& e) {
+      state.SkipWithError(e.what());
     }
   }
 
@@ -81,21 +85,53 @@ struct selection : public fixture {
 };
 
 const std::vector<params> kInputs{
-  {20000, 500, 1, true},   {20000, 500, 2, true},    {20000, 500, 4, true},
-  {20000, 500, 8, true},   {20000, 500, 16, true},   {20000, 500, 32, true},
-  {20000, 500, 64, true},  {20000, 500, 128, true},  {20000, 500, 256, true},
+  {20000, 500, 1, true, false},      {20000, 500, 2, true, false},
+  {20000, 500, 4, true, false},      {20000, 500, 8, true, false},
+  {20000, 500, 16, true, false},     {20000, 500, 32, true, false},
+  {20000, 500, 64, true, false},     {20000, 500, 128, true, false},
+  {20000, 500, 256, true, false},
 
-  {1000, 10000, 1, true},  {1000, 10000, 2, true},   {1000, 10000, 4, true},
-  {1000, 10000, 8, true},  {1000, 10000, 16, true},  {1000, 10000, 32, true},
-  {1000, 10000, 64, true}, {1000, 10000, 128, true}, {1000, 10000, 256, true},
+  {1000, 10000, 1, true, false},     {1000, 10000, 2, true, false},
+  {1000, 10000, 4, true, false},     {1000, 10000, 8, true, false},
+  {1000, 10000, 16, true, false},    {1000, 10000, 32, true, false},
+  {1000, 10000, 64, true, false},    {1000, 10000, 128, true, false},
+  {1000, 10000, 256, true, false},
 
-  {100, 100000, 1, true},  {100, 100000, 2, true},   {100, 100000, 4, true},
-  {100, 100000, 8, true},  {100, 100000, 16, true},  {100, 100000, 32, true},
-  {100, 100000, 64, true}, {100, 100000, 128, true}, {100, 100000, 256, true},
+  {100, 100000, 1, true, false},     {100, 100000, 2, true, false},
+  {100, 100000, 4, true, false},     {100, 100000, 8, true, false},
+  {100, 100000, 16, true, false},    {100, 100000, 32, true, false},
+  {100, 100000, 64, true, false},    {100, 100000, 128, true, false},
+  {100, 100000, 256, true, false},
 
-  {10, 1000000, 1, true},  {10, 1000000, 2, true},   {10, 1000000, 4, true},
-  {10, 1000000, 8, true},  {10, 1000000, 16, true},  {10, 1000000, 32, true},
-  {10, 1000000, 64, true}, {10, 1000000, 128, true}, {10, 1000000, 256, true},
+  {10, 1000000, 1, true, false},     {10, 1000000, 2, true, false},
+  {10, 1000000, 4, true, false},     {10, 1000000, 8, true, false},
+  {10, 1000000, 16, true, false},    {10, 1000000, 32, true, false},
+  {10, 1000000, 64, true, false},    {10, 1000000, 128, true, false},
+  {10, 1000000, 256, true, false},
+
+  {10, 10000000, 1, true, false},    {10, 10000000, 2, true, false},
+  {10, 10000000, 4, true, false},    {10, 10000000, 8, true, false},
+  {10, 10000000, 16, true, false},   {10, 10000000, 32, true, false},
+  {10, 10000000, 64, true, false},   {10, 10000000, 128, true, false},
+  {10, 10000000, 256, true, false},
+
+  {10, 100000000, 1, true, false},   {10, 100000000, 2, true, false},
+  {10, 100000000, 4, true, false},   {10, 100000000, 8, true, false},
+  {10, 100000000, 16, true, false},  {10, 100000000, 32, true, false},
+  {10, 100000000, 64, true, false},  {10, 100000000, 128, true, false},
+  {10, 100000000, 256, true, false},
+
+  {1, 1000000000, 1, true, false},   {1, 1000000000, 2, true, false},
+  {1, 1000000000, 4, true, false},   {1, 1000000000, 8, true, false},
+  {1, 1000000000, 16, true, false},  {1, 1000000000, 32, true, false},
+  {1, 1000000000, 64, true, false},  {1, 1000000000, 128, true, false},
+  {1, 1000000000, 256, true, false},
+
+  {1, 1000000000, 1, true, true},    {1, 1000000000, 2, true, true},
+  {1, 1000000000, 4, true, true},    {1, 1000000000, 8, true, true},
+  {1, 1000000000, 16, true, true},   {1, 1000000000, 32, true, true},
+  {1, 1000000000, 64, true, true},   {1, 1000000000, 128, true, true},
+  {1, 1000000000, 256, true, true},
 };
 
 #define SELECTION_REGISTER(KeyT, IdxT, Algo)                                      \

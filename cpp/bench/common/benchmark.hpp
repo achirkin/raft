@@ -121,6 +121,13 @@ class fixture {
   virtual void run_benchmark(::benchmark::State& state) = 0;
   virtual void generate_metrics(::benchmark::State& state) {}
 
+ protected:
+  /** The helper that writes zeroes to some buffer in GPU memory to flush the L2 cache.  */
+  void flush_L2_cache()
+  {
+    RAFT_CUDA_TRY(cudaMemsetAsync(scratch_buf_.data(), 0, scratch_buf_.size(), stream));
+  }
+
   /**
    * The helper to be used inside `run_benchmark`, to loop over the state and record time using the
    * cuda_event_timer.
@@ -129,9 +136,7 @@ class fixture {
   void loop_on_state(::benchmark::State& state, Lambda benchmark_func, bool flush_L2 = true)
   {
     for (auto _ : state) {
-      if (flush_L2) {
-        RAFT_CUDA_TRY(cudaMemsetAsync(scratch_buf_.data(), 0, scratch_buf_.size(), stream));
-      }
+      if (flush_L2) { flush_L2_cache(); }
       cuda_event_timer timer(state, stream);
       benchmark_func();
     }

@@ -8,6 +8,9 @@ case $OUTPUT_DIR= in
   *) OUTPUT_DIR="`readlink -f -m \"$(pwd)/${OUTPUT_DIR}\"`" ;;
 esac
 
+mkdir -p $OUTPUT_DIR
+chmod 777 $OUTPUT_DIR
+
 docker build --tag knn-bench .
 
 sudo nvidia-smi -i 0 -pm 1

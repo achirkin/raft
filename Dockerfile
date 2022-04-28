@@ -1,5 +1,5 @@
 FROM rapidsai/rapidsai-core-dev:22.04-cuda11.5-devel-ubuntu20.04-py3.8
-VOLUME output
+VOLUME /output
 
 COPY build.sh build.sh
 COPY cpp cpp

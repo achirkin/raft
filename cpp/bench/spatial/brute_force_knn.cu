@@ -51,7 +51,7 @@ auto operator<<(std::ostream& os, const params& p) -> std::ostream&
   return os;
 }
 
-enum class TransferStrategy { NO_COPY, COPY_PLAIN, COPY_PINNED, MANAGED };
+enum class TransferStrategy { NO_COPY, COPY_PLAIN, COPY_PINNED, MAP_PINNED, MANAGED };
 
 auto operator<<(std::ostream& os, const TransferStrategy& ts) -> std::ostream&
 {
@@ -59,6 +59,7 @@ auto operator<<(std::ostream& os, const TransferStrategy& ts) -> std::ostream&
     case TransferStrategy::NO_COPY: os << "NO_COPY"; break;
     case TransferStrategy::COPY_PLAIN: os << "COPY_PLAIN"; break;
     case TransferStrategy::COPY_PINNED: os << "COPY_PINNED"; break;
+    case TransferStrategy::MAP_PINNED: os << "MAP_PINNED"; break;
     case TransferStrategy::MANAGED: os << "MANAGED"; break;
     default: os << "UNKNOWN";
   }
@@ -89,18 +90,28 @@ struct device_resource {
 };
 
 template <typename T>
-struct pinned_array {
-  explicit pinned_array(size_t n) : n_(n), res_()
+struct host_uvector {
+  host_uvector(size_t n, bool pinned) : n_(n)
   {
-    arr_ = static_cast<T*>(res_.allocate(n_ * sizeof(T)));
+    if (pinned) {
+      res_ = new rmm::mr::pinned_memory_resource();
+    } else {
+      res_ = new rmm::mr::new_delete_resource();
+    }
+    arr_ = static_cast<T*>(res_->allocate(n_ * sizeof(T)));
   }
 
-  ~pinned_array() noexcept { res_.deallocate(arr_, n_ * sizeof(T)); }
+  ~host_uvector() noexcept
+  {
+    res_->deallocate(arr_, n_ * sizeof(T));
+    delete res_;
+  }
 
   auto data() -> T* { return arr_; }
+  [[nodiscard]] auto size() const -> size_t { return n_; }
 
  private:
-  rmm::mr::pinned_memory_resource res_;
+  rmm::mr::host_memory_resource* res_;
   size_t n_;
   T* arr_;
 };
@@ -161,22 +172,29 @@ struct knn : public fixture {
       for (auto _ : state) {
         // managed or plain device memory initialized anew every time
         rmm::device_uvector<ValT> data(data_host_.size(), stream, dev_mem_res_.get());
-        // we may want to copy data from the pinned memory rather than the paged memory
-        std::optional<pinned_array<ValT>> data_pinned;
-        ValT* host_ptr = data_host_.data();
+        ValT* data_ptr         = data.data();
+        size_t allocation_size = data_host_.size() * sizeof(ValT);
 
         // Non-benchmarked part: using different methods to copy the data if necessary
         switch (strategy_) {
           case TransferStrategy::NO_COPY:  // copy data to GPU before starting the timer.
-            copy(data.data(), data_host_.data(), data_host_.size(), stream);
+            copy(data_ptr, data_host_.data(), data_host_.size(), stream);
             break;
-          case TransferStrategy::COPY_PINNED:  // replace host_ptr with the pinned data.
-            data_pinned.emplace(data_host_.size());
-            host_ptr = data_pinned->data();
-            std::memcpy(host_ptr, data_host_.data(), data_host_.size() * sizeof(ValT));
+          case TransferStrategy::COPY_PINNED:
+            RAFT_CUDA_TRY(
+              cudaHostRegister(data_host_.data(), allocation_size, cudaHostRegisterDefault));
+            break;
+          case TransferStrategy::MAP_PINNED:
+            RAFT_CUDA_TRY(
+              cudaHostRegister(data_host_.data(), allocation_size, cudaHostRegisterMapped));
+            RAFT_CUDA_TRY(cudaHostGetDevicePointer(&data_ptr, data_host_.data(), 0));
             break;
           case TransferStrategy::MANAGED:  // sic! using std::memcpy rather than cuda copy
-            std::memcpy(data.data(), data_host_.data(), data_host_.size() * sizeof(ValT));
+            CUDA_CHECK(cudaMemAdvise(
+              data_ptr, allocation_size, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId));
+            CUDA_CHECK(cudaMemAdvise(
+              data_ptr, allocation_size, cudaMemAdviseSetAccessedBy, handle.get_device()));
+            std::memcpy(data_ptr, data_host_.data(), allocation_size);
             break;
           default: break;
         }
@@ -188,18 +206,24 @@ struct knn : public fixture {
           switch (strategy_) {
             case TransferStrategy::COPY_PLAIN:
             case TransferStrategy::COPY_PINNED:
-              copy(data.data(), host_ptr, data_host_.size(), stream);
+              copy(data_ptr, data_host_.data(), data_host_.size(), stream);
             default: break;
           }
-          ImplT::run(handle,
-                     params_,
-                     data.data(),
-                     search_items_.data(),
-                     out_dists_.data(),
-                     out_idxs_.data());
+          ImplT::run(
+            handle, params_, data_ptr, search_items_.data(), out_dists_.data(), out_idxs_.data());
+        }
+
+        switch (strategy_) {
+          case TransferStrategy::COPY_PINNED:
+          case TransferStrategy::MAP_PINNED:
+            RAFT_CUDA_TRY(cudaHostUnregister(data_host_.data()));
+            break;
+          default: break;
         }
       }
     } catch (raft::exception& e) {
+      state.SkipWithError(e.what());
+    } catch (std::bad_alloc& e) {
       state.SkipWithError(e.what());
     }
   }
@@ -215,21 +239,12 @@ struct knn : public fixture {
   rmm::device_uvector<IdxT> out_idxs_;
 };
 
-const std::vector<params> kInputs{
-  {8000000, 256, 1000, 4},
-  {8000000, 256, 1000, 8},
-  {8000000, 256, 1000, 16},
-  {8000000, 256, 1000, 32},
-
-  {40000000, 128, 200, 4},
-  {40000000, 128, 200, 8},
-  {40000000, 128, 200, 16},
-  {40000000, 128, 200, 32},
-};
+const std::vector<params> kInputs{{20000000, 128, 1000, 32}, {40000000, 128, 1000, 32}};
 
 const std::vector<TransferStrategy> kStrategies{TransferStrategy::NO_COPY,
                                                 TransferStrategy::COPY_PLAIN,
                                                 TransferStrategy::COPY_PINNED,
+                                                TransferStrategy::MAP_PINNED,
                                                 TransferStrategy::MANAGED};
 
 #define KNN_REGISTER(ValT, IdxT, ImplT)                                         \

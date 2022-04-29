@@ -145,7 +145,7 @@ struct knn : public fixture {
     : params_(p),
       strategy_(strategy),
       dev_mem_res_(strategy == TransferStrategy::MANAGED),
-      data_host_(p.n_samples * p.n_dims),
+      data_host_(0),
       search_items_(p.n_probes * p.n_dims, stream),
       out_dists_(p.n_probes * p.k, stream),
       out_idxs_(p.n_probes * p.k, stream)
@@ -153,13 +153,27 @@ struct knn : public fixture {
     raft::random::RngState state{42};
     raft::random::uniform(
       state, search_items_.data(), search_items_.size(), ValT(-1.0), ValT(1.0), stream);
-    rmm::device_uvector<ValT> d(data_host_.size(), stream);
-    raft::random::uniform(state, d.data(), d.size(), ValT(-1.0), ValT(1.0), stream);
-    copy(data_host_.data(), d.data(), data_host_.size(), stream);
+    try {
+      size_t total_size = p.n_samples * p.n_dims;
+      data_host_.resize(total_size);
+      constexpr size_t kGenMinibatchSize = 1024 * 1024 * 1024;
+      rmm::device_uvector<ValT> d(std::min(kGenMinibatchSize, total_size), stream);
+      for (size_t offset = 0; offset < total_size; offset += kGenMinibatchSize) {
+        size_t actual_size = std::min(total_size - offset, kGenMinibatchSize);
+        raft::random::uniform(state, d.data(), actual_size, ValT(-1.0), ValT(1.0), stream);
+        copy(data_host_.data() + offset, d.data(), actual_size, stream);
+      }
+    } catch (std::bad_alloc& e) {
+      data_does_not_fit_ = true;
+    }
   }
 
   void run_benchmark(::benchmark::State& state) override
   {
+    if (data_does_not_fit_) {
+      state.SkipWithError("The data size is too big to fit into the host memory.");
+    }
+
     using_pool_memory_res default_resource;
 
     try {
@@ -191,9 +205,10 @@ struct knn : public fixture {
             break;
           case TransferStrategy::MANAGED:  // sic! using std::memcpy rather than cuda copy
             CUDA_CHECK(cudaMemAdvise(
-              data_ptr, allocation_size, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId));
+              data_ptr, allocation_size, cudaMemAdviseSetPreferredLocation, handle.get_device()));
             CUDA_CHECK(cudaMemAdvise(
               data_ptr, allocation_size, cudaMemAdviseSetAccessedBy, handle.get_device()));
+            CUDA_CHECK(cudaMemAdvise(data_ptr, allocation_size, cudaMemAdviseSetReadMostly, 0));
             std::memcpy(data_ptr, data_host_.data(), allocation_size);
             break;
           default: break;
@@ -232,6 +247,7 @@ struct knn : public fixture {
   const params params_;
   const TransferStrategy strategy_;
   device_resource dev_mem_res_;
+  bool data_does_not_fit_ = false;
 
   std::vector<ValT> data_host_;
   rmm::device_uvector<ValT> search_items_;
@@ -239,7 +255,11 @@ struct knn : public fixture {
   rmm::device_uvector<IdxT> out_idxs_;
 };
 
-const std::vector<params> kInputs{{20000000, 128, 1000, 32}, {40000000, 128, 1000, 32}};
+const std::vector<params> kInputs{{20000000, 128, 1000, 32},
+                                  {40000000, 128, 1000, 32},
+                                  {80000000, 128, 1000, 32},
+                                  {160000000, 128, 1000, 32},
+                                  {200000000, 128, 1000, 32}};
 
 const std::vector<TransferStrategy> kStrategies{TransferStrategy::NO_COPY,
                                                 TransferStrategy::COPY_PLAIN,

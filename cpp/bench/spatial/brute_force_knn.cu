@@ -256,9 +256,15 @@ struct knn : public fixture {
 };
 
 const std::vector<params> kInputs{{20000000, 128, 1000, 32},
+                                  // 20GB
                                   {40000000, 128, 1000, 32},
+                                  // 40GB
                                   {80000000, 128, 1000, 32},
+                                  // 60GB
+                                  {120000000, 128, 1000, 32},
+                                  // 80GB
                                   {160000000, 128, 1000, 32},
+                                  // 100GB
                                   {200000000, 128, 1000, 32}};
 
 const std::vector<TransferStrategy> kStrategies{TransferStrategy::NO_COPY,

@@ -352,7 +352,15 @@ class mdarray
   constexpr auto operator                                               =(mdarray&&) noexcept(
     std::is_nothrow_move_assignable<container_type>::value) -> mdarray& = default;
 
-  ~mdarray() noexcept(std::is_nothrow_destructible<container_type>::value) = default;
+  ~mdarray() noexcept(std::is_nothrow_destructible<container_type>::value)
+  {
+    printf("~mdarray (%p)\n", this);
+    printf("Size: ");
+    for (size_t i = 0; i < rank(); i++) {
+      printf("%zu, ", extent(i));
+    }
+    printf("\n");
+  };
 
 #ifndef RAFT_MDARRAY_CTOR_CONSTEXPR
 #if !(__CUDACC_VER_MAJOR__ == 11 && __CUDACC_VER_MINOR__ <= 2)

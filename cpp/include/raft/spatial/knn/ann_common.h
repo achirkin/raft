@@ -20,6 +20,7 @@
 
 #pragma once
 
+#include "detail/processing.hpp"
 #include "ivf_flat_types.hpp"
 
 #include <raft/distance/distance_type.hpp>
@@ -31,43 +32,77 @@ namespace raft {
 namespace spatial {
 namespace knn {
 
-template <typename math_t>
-class MetricProcessor;
-
 struct knnIndex {
   raft::distance::DistanceType metric;
   float metricArg;
   int nprobe;
   std::unique_ptr<faiss::gpu::GpuIndex> index;
   std::unique_ptr<MetricProcessor<float>> metric_processor;
-  std::unique_ptr<const ivf_flat::index<float, int64_t>> ivf_flat_float_;
-  std::unique_ptr<const ivf_flat::index<uint8_t, int64_t>> ivf_flat_uint8_t_;
-  std::unique_ptr<const ivf_flat::index<int8_t, int64_t>> ivf_flat_int8_t_;
+  std::unique_ptr<ivf_flat::index<float, int64_t>> ivf_flat_float_;
+  std::unique_ptr<ivf_flat::index<uint8_t, int64_t>> ivf_flat_uint8_t_;
+  std::unique_ptr<ivf_flat::index<int8_t, int64_t>> ivf_flat_int8_t_;
 
   std::unique_ptr<raft::spatial::knn::RmmGpuResources> gpu_res;
   int device;
 
   template <typename T, typename IdxT>
-  auto ivf_flat() -> std::unique_ptr<const ivf_flat::index<T, IdxT>>&;
+  auto ivf_flat() -> std::unique_ptr<ivf_flat::index<T, IdxT>>&;
+
+  ~knnIndex()
+  {
+    printf("~knnIndex\n");
+    auto stream = rmm::cuda_stream_legacy;
+    stream.synchronize();
+    printf("~knnIndex: sync\n");
+    {
+      auto x = make_device_mdarray<float>(stream, 3, 7);
+      printf("~knnIndex: created test mdarray\n");
+      stream.synchronize();
+      printf("~knnIndex: sync 2\n");
+    }
+    printf("~knnIndex: left the scope of the test mdarray\n");
+    stream.synchronize();
+    printf("Calling knnIndex destructor... (%d), (%d), (%d)\n",
+           (bool)ivf_flat_float_,
+           (bool)ivf_flat_uint8_t_,
+           (bool)ivf_flat_int8_t_);
+    if (ivf_flat_float_) {
+      printf("Destroying ivf_flat_float_... (%zu)\n", size_t(ivf_flat_float_->size()));
+      ivf_flat_float_.reset();
+      printf("Destroying ivf_flat_float_...Done!\n");
+    }
+    if (ivf_flat_uint8_t_) {
+      printf("Destroying ivf_flat_uint8_t_...\n");
+      ivf_flat_uint8_t_.reset();
+      printf("Destroying ivf_flat_uint8_t_...Done!\n");
+    }
+    if (ivf_flat_int8_t_) {
+      printf("Destroying ivf_flat_int8_t_...\n");
+      ivf_flat_int8_t_.reset();
+      printf("Destroying ivf_flat_int8_t_...Done!\n");
+    }
+    stream.synchronize();
+    printf("Calling knnIndex destructor...Done!\n");
+  }
 };
 
 template <>
 inline auto knnIndex::ivf_flat<float, int64_t>()
-  -> std::unique_ptr<const ivf_flat::index<float, int64_t>>&
+  -> std::unique_ptr<ivf_flat::index<float, int64_t>>&
 {
   return ivf_flat_float_;
 }
 
 template <>
 inline auto knnIndex::ivf_flat<uint8_t, int64_t>()
-  -> std::unique_ptr<const ivf_flat::index<uint8_t, int64_t>>&
+  -> std::unique_ptr<ivf_flat::index<uint8_t, int64_t>>&
 {
   return ivf_flat_uint8_t_;
 }
 
 template <>
 inline auto knnIndex::ivf_flat<int8_t, int64_t>()
-  -> std::unique_ptr<const ivf_flat::index<int8_t, int64_t>>&
+  -> std::unique_ptr<ivf_flat::index<int8_t, int64_t>>&
 {
   return ivf_flat_int8_t_;
 }

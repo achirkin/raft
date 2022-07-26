@@ -130,12 +130,12 @@ inline auto extend(const handle_t& handle,
                   orig_index.metric,
                   stream);
 
-  auto&& list_sizes     = make_device_mdarray<uint32_t>(stream, n_lists);
-  auto&& list_offsets   = make_device_mdarray<IdxT>(stream, n_lists + 1);
+  auto list_sizes       = make_device_mdarray<uint32_t>(stream, n_lists);
+  auto list_offsets     = make_device_mdarray<IdxT>(stream, n_lists + 1);
   auto list_sizes_ptr   = list_sizes.data();
   auto list_offsets_ptr = list_offsets.data();
 
-  auto&& centers   = make_device_mdarray<float>(stream, n_lists, dim);
+  auto centers     = make_device_mdarray<float>(stream, n_lists, dim);
   auto centers_ptr = centers.data();
 
   // Calculate the centers and sizes on the new data, starting from the original values
@@ -164,8 +164,8 @@ inline auto extend(const handle_t& handle,
   update_host(&index_size, list_offsets_ptr + n_lists, 1, stream);
   handle.sync_stream(stream);
 
-  auto&& data    = make_device_mdarray<T>(stream, index_size, dim);
-  auto&& indices = make_device_mdarray<IdxT>(stream, index_size);
+  auto data    = make_device_mdarray<T>(stream, index_size, dim);
+  auto indices = make_device_mdarray<IdxT>(stream, index_size);
 
   // Populate index with the old data
   if (orig_index.size() > 0) {
@@ -206,24 +206,24 @@ inline auto extend(const handle_t& handle,
 
   // Precompute the centers vector norms for L2Expanded distance
   auto compute_norms = [&]() {
-    auto&& r = make_device_mdarray<float>(stream, n_lists);
+    auto r = make_device_mdarray<float>(stream, n_lists);
     utils::dots_along_rows(n_lists, dim, centers.data(), r.data(), stream);
     RAFT_LOG_TRACE_VEC(r.data(), 20);
     return r;
   };
-  auto&& center_norms = orig_index.metric == raft::distance::DistanceType::L2Expanded
-                          ? std::optional(compute_norms())
-                          : std::nullopt;
+  auto center_norms = orig_index.metric == raft::distance::DistanceType::L2Expanded
+                        ? std::optional(compute_norms())
+                        : std::nullopt;
 
   // assemble the index
   return index<T, IdxT>(orig_index.veclen,
                         orig_index.metric,
-                        std::move(data),
-                        std::move(indices),
-                        std::move(list_sizes),
-                        std::move(list_offsets),
-                        std::move(centers),
-                        std::move(center_norms));
+                        data,
+                        indices,
+                        list_sizes,
+                        list_offsets,
+                        centers,
+                        center_norms);
 }
 
 /** See raft::spatial::knn::ivf_flat::build docs */
@@ -250,7 +250,7 @@ inline auto build(const handle_t& handle,
   auto n_lists = static_cast<uint32_t>(params.n_lists);
 
   // kmeans cluster ids for the dataset
-  auto&& centers = make_device_mdarray<float>(stream, n_lists, dim);
+  auto centers = make_device_mdarray<float>(stream, n_lists, dim);
 
   // Predict labels of the whole dataset
   kmeans::build_optimized_kmeans(handle,
@@ -264,22 +264,16 @@ inline auto build(const handle_t& handle,
                                  params.metric,
                                  stream);
 
-  auto&& data         = make_device_mdarray<T>(stream, 0, dim);
-  auto&& indices      = make_device_mdarray<IdxT>(stream, 0);
-  auto&& list_sizes   = make_device_mdarray<uint32_t>(stream, n_lists);
-  auto&& list_offsets = make_device_mdarray<IdxT>(stream, n_lists + 1);
+  auto data         = make_device_mdarray<T>(stream, 0, dim);
+  auto indices      = make_device_mdarray<IdxT>(stream, 0);
+  auto list_sizes   = make_device_mdarray<uint32_t>(stream, n_lists);
+  auto list_offsets = make_device_mdarray<IdxT>(stream, n_lists + 1);
   utils::memzero(list_sizes.data(), list_sizes.size(), stream);
   utils::memzero(list_offsets.data(), list_offsets.size(), stream);
 
   // assemble the index
-  index<T, IdxT> index(veclen,
-                       params.metric,
-                       std::move(data),
-                       std::move(indices),
-                       std::move(list_sizes),
-                       std::move(list_offsets),
-                       std::move(centers),
-                       std::nullopt);
+  index<T, IdxT> index(
+    veclen, params.metric, data, indices, list_sizes, list_offsets, centers, std::nullopt);
 
   // add the data if necessary
   if (params.add_data_on_build) {

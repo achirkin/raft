@@ -76,20 +76,20 @@ struct index : knn::index {
    */
   [[nodiscard]] inline auto data() const noexcept -> device_mdspan<const T, extent_2d, row_major>
   {
-    return data_.view();
+    return data_->view();
   }
 
   /** Inverted list indices: ids of items in the source data [size] */
   [[nodiscard]] inline auto indices() const noexcept
     -> device_mdspan<const IdxT, extent_1d, row_major>
   {
-    return indices_.view();
+    return indices_->view();
   }
   /** Sizes of the lists (clusters) [n_lists] */
   [[nodiscard]] inline auto list_sizes() const noexcept
     -> device_mdspan<const uint32_t, extent_1d, row_major>
   {
-    return list_sizes_.view();
+    return list_sizes_->view();
   }
   /**
    * Offsets into the lists [n_lists + 1].
@@ -98,13 +98,13 @@ struct index : knn::index {
   [[nodiscard]] inline auto list_offsets() const noexcept
     -> device_mdspan<const IdxT, extent_1d, row_major>
   {
-    return list_offsets_.view();
+    return list_offsets_->view();
   }
   /** k-means cluster centers corresponding to the lists [n_lists, dim] */
   [[nodiscard]] inline auto centers() const noexcept
     -> device_mdspan<const float, extent_2d, row_major>
   {
-    return centers_.view();
+    return centers_->view();
   }
   /**
    * (Optional) Precomputed norms of the `centers` w.r.t. the chosen distance metric [n_lists].
@@ -115,7 +115,7 @@ struct index : knn::index {
   [[nodiscard]] inline auto center_norms() const noexcept
     -> std::optional<device_mdspan<const float, extent_1d, row_major>>
   {
-    if (center_norms_.has_value()) {
+    if (center_norms_) {
       return std::make_optional<device_mdspan<const float, extent_1d, row_major>>(
         center_norms_->view());
     } else {
@@ -126,25 +126,56 @@ struct index : knn::index {
   /** Total length of the index. */
   [[nodiscard]] constexpr inline auto size() const noexcept -> IdxT
   {
-    return static_cast<uint32_t>(data_.extent(0));
+    return static_cast<IdxT>(data_->extent(0));
   }
   /** Dimensionality of the data. */
   [[nodiscard]] constexpr inline auto dim() const noexcept -> uint32_t
   {
-    return static_cast<uint32_t>(data_.extent(1));
+    return static_cast<uint32_t>(data_->extent(1));
   }
   /** Number of clusters/inverted lists. */
   [[nodiscard]] constexpr inline auto n_lists() const noexcept -> uint32_t
   {
-    return static_cast<uint32_t>(centers_.extent(0));
+    return static_cast<uint32_t>(centers_->extent(0));
   }
 
   // Don't allow copying the index for performance reasons (try avoiding copying data)
   index(const index&) = delete;
-  index(index&&)      = default;
+  index(index&& source) : knn::index(), veclen(source.veclen), metric(source.metric)
+  {
+    data_.swap(source.data_);
+    indices_.swap(source.indices_);
+    list_sizes_.swap(source.list_sizes_);
+    list_offsets_.swap(source.list_offsets_);
+    centers_.swap(source.centers_);
+    center_norms_.swap(source.center_norms_);
+    printf("moved ivf_flat::index to %p!\n", this);
+  }
   auto operator=(const index&) -> index& = delete;
-  auto operator=(index&&) -> index& = default;
-  ~index()                          = default;
+  auto operator=(index&&) -> index& = delete;
+  ~index()
+  {
+    printf("~ivf_flat::index(%p)\n", this);
+    printf("~ivf_flat::index vals: (%u / %d)\n", veclen, int(metric));
+    printf("Try to delete center_norms_ (%p)\n", center_norms_.get());
+    center_norms_.reset();
+    printf("Has reset center_norms_\n");
+    printf("Try to delete centers_ (%p)\n", centers_.get());
+    centers_.reset();
+    printf("Has reset centers_\n");
+    printf("Try to delete list_offsets_ (%p)\n", list_offsets_.get());
+    list_offsets_.reset();
+    printf("Has reset list_offsets_\n");
+    printf("Try to delete list_sizes_ (%p)\n", list_sizes_.get());
+    list_sizes_.reset();
+    printf("Has reset list_sizes_\n");
+    printf("Try to delete indices_ (%p)\n", indices_.get());
+    indices_.reset();
+    printf("Has reset indices_\n");
+    printf("Try to delete data_ (%p)\n", data_.get());
+    data_.reset();
+    printf("Has reset data_\n");
+  };
 
   /**
    * Construct the index. All data is moved to save the GPU memory
@@ -152,42 +183,45 @@ struct index : knn::index {
    */
   index(uint32_t veclen,
         raft::distance::DistanceType metric,
-        device_mdarray<T, extent_2d, row_major>&& data,
-        device_mdarray<IdxT, extent_1d, row_major>&& indices,
-        device_mdarray<uint32_t, extent_1d, row_major>&& list_sizes,
-        device_mdarray<IdxT, extent_1d, row_major>&& list_offsets,
-        device_mdarray<float, extent_2d, row_major>&& centers,
-        std::optional<device_mdarray<float, extent_1d, row_major>>&& center_norms)
+        const device_mdarray<T, extent_2d, row_major>& data,
+        const device_mdarray<IdxT, extent_1d, row_major>& indices,
+        const device_mdarray<uint32_t, extent_1d, row_major>& list_sizes,
+        const device_mdarray<IdxT, extent_1d, row_major>& list_offsets,
+        const device_mdarray<float, extent_2d, row_major>& centers,
+        const std::optional<device_mdarray<float, extent_1d, row_major>>& center_norms)
     : knn::index(),
       veclen(veclen),
       metric(metric),
-      data_(std::move(data)),
-      indices_(std::move(indices)),
-      list_sizes_(std::move(list_sizes)),
-      list_offsets_(std::move(list_offsets)),
-      centers_(std::move(centers)),
-      center_norms_(std::move(center_norms))
+      data_(std::make_unique<device_mdarray<T, extent_2d, row_major>>(data)),
+      indices_(std::make_unique<device_mdarray<IdxT, extent_1d, row_major>>(indices)),
+      list_sizes_(std::make_unique<device_mdarray<uint32_t, extent_1d, row_major>>(list_sizes)),
+      list_offsets_(std::make_unique<device_mdarray<IdxT, extent_1d, row_major>>(list_offsets)),
+      centers_(std::make_unique<device_mdarray<float, extent_2d, row_major>>(centers)),
+      center_norms_(center_norms.has_value()
+                      ? std::make_unique<device_mdarray<float, extent_1d, row_major>>(*center_norms)
+                      : nullptr)
   {
+    printf("Using main constructor ivf_flat::index(%p)\n", this);
     // Throw an error if the index content is inconsistent.
     RAFT_EXPECTS(dim() % veclen == 0, "dimensionality is not a multiple of the veclen");
-    RAFT_EXPECTS(data_.extent(0) == indices_.extent(0), "inconsistent index size");
-    RAFT_EXPECTS(data_.extent(1) == centers_.extent(1), "inconsistent data dimensionality");
-    RAFT_EXPECTS(                                               //
-      (centers_.extent(0) == list_sizes_.extent(0)) &&          //
-        (centers_.extent(0) + 1 == list_offsets_.extent(0)) &&  //
-        (!center_norms_.has_value() || centers_.extent(0) == center_norms_->extent(0)),
+    RAFT_EXPECTS(data_->extent(0) == indices_->extent(0), "inconsistent index size");
+    RAFT_EXPECTS(data_->extent(1) == centers_->extent(1), "inconsistent data dimensionality");
+    RAFT_EXPECTS(                                                 //
+      (centers_->extent(0) == list_sizes_->extent(0)) &&          //
+        (centers_->extent(0) + 1 == list_offsets_->extent(0)) &&  //
+        (!center_norms_ || centers_->extent(0) == center_norms_->extent(0)),
       "inconsistent number of lists (clusters)");
-    RAFT_EXPECTS(reinterpret_cast<size_t>(data_.data()) % (veclen * sizeof(T)) == 0,
+    RAFT_EXPECTS(reinterpret_cast<size_t>(data_->data()) % (veclen * sizeof(T)) == 0,
                  "The data storage pointer is not aligned to the vector length");
   }
 
  private:
-  device_mdarray<T, extent_2d, row_major> data_;
-  device_mdarray<IdxT, extent_1d, row_major> indices_;
-  device_mdarray<uint32_t, extent_1d, row_major> list_sizes_;
-  device_mdarray<IdxT, extent_1d, row_major> list_offsets_;
-  device_mdarray<float, extent_2d, row_major> centers_;
-  std::optional<device_mdarray<float, extent_1d, row_major>> center_norms_;
+  std::unique_ptr<device_mdarray<T, extent_2d, row_major>> data_;
+  std::unique_ptr<device_mdarray<IdxT, extent_1d, row_major>> indices_;
+  std::unique_ptr<device_mdarray<uint32_t, extent_1d, row_major>> list_sizes_;
+  std::unique_ptr<device_mdarray<IdxT, extent_1d, row_major>> list_offsets_;
+  std::unique_ptr<device_mdarray<float, extent_2d, row_major>> centers_;
+  std::unique_ptr<device_mdarray<float, extent_1d, row_major>> center_norms_;
 };
 
 struct index_params : knn::index_params {

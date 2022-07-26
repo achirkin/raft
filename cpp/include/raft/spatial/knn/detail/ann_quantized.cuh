@@ -128,9 +128,10 @@ void approx_knn_build_index(const handle_t& handle,
   if (ivf_ft_pams && (metric == raft::distance::DistanceType::L2Unexpanded ||
                       metric == raft::distance::DistanceType::L2Expanded ||
                       metric == raft::distance::DistanceType::InnerProduct)) {
-    auto new_params               = from_legacy_index_params(*ivf_ft_pams, metric, metricArg);
-    index->ivf_flat<T, int64_t>() = std::make_unique<const ivf_flat::index<T, int64_t>>(
-      ivf_flat::build(handle, new_params, index_array, int64_t(n), D));
+    auto new_params = from_legacy_index_params(*ivf_ft_pams, metric, metricArg);
+    std::make_unique<ivf_flat::index<T, int64_t>>(
+      std::move(ivf_flat::build(handle, new_params, index_array, int64_t(n), D)))
+      .swap(index->ivf_flat<T, int64_t>());
   } else {
     RAFT_CUDA_TRY(cudaGetDevice(&(index->device)));
     index->gpu_res.reset(new raft::spatial::knn::RmmGpuResources());

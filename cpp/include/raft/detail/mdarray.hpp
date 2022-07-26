@@ -89,21 +89,37 @@ class device_uvector {
   using const_iterator = const_pointer;
 
  public:
-  ~device_uvector()                         = default;
+  // ~device_uvector()                         = default;
   device_uvector(device_uvector&&) noexcept = default;
-  device_uvector(device_uvector const& that) : data_{that.data_, that.data_.stream()} {}
+  device_uvector(device_uvector const& that)
+    : data_{that.data_, that.data_.stream(), that.data_.memory_resource()}
+  {
+    data_.stream().synchronize();
+  }
 
   auto operator=(device_uvector<T> const& that) -> device_uvector<T>&
   {
-    data_ = rmm::device_uvector<T>{that.data_, that.data_.stream()};
+    auto s = that.data_.stream();
+    data_  = rmm::device_uvector<T>{that.data_, s, that.data_.memory_resource()};
+    s.synchronize();
     return *this;
   }
-  auto operator=(device_uvector<T>&& that) noexcept -> device_uvector<T>& = default;
+  auto operator=(device_uvector<T>&& that) noexcept -> device_uvector<T>&
+  {
+    data_ = std::move(that.data_);
+    return *this;
+  }
 
   /**
    * @brief Default ctor is deleted as it doesn't accept stream.
    */
   device_uvector() = delete;
+  ~device_uvector()
+  {
+    printf("raft::~device_uvector(%p)\n", this);
+    printf("raft::~device_uvector(size = %zu)\n", data_.size());
+  };
+
   /**
    * @brief Ctor that accepts a size, stream and an optional mr.
    */
@@ -171,6 +187,15 @@ class device_uvector_policy {
       nullptr) noexcept(std::is_nothrow_copy_constructible_v<rmm::cuda_stream_view>)
     : stream_{stream}, mr_(mr)
   {
+  }
+  device_uvector_policy(const device_uvector_policy&) = default;
+  auto operator=(const device_uvector_policy&) -> device_uvector_policy& = default;
+  device_uvector_policy(device_uvector_policy&& source)                  = delete;
+  auto operator=(device_uvector_policy&&) -> device_uvector_policy& = delete;
+  virtual ~device_uvector_policy()
+  {
+    printf("~device_uvector_policy(%p)\n", this);
+    printf("~device_uvector_policy(values: %zu %p)\n", size_t(stream_.value()), mr_);
   }
 
   [[nodiscard]] constexpr auto access(container_type& c, size_t n) const noexcept -> reference

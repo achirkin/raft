@@ -359,7 +359,7 @@ class mdarray
     for (size_t i = 0; i < rank(); i++) {
       printf("%zu, ", extent(i));
     }
-    printf("\n");
+    printf(".\n");
   };
 
 #ifndef RAFT_MDARRAY_CTOR_CONSTEXPR

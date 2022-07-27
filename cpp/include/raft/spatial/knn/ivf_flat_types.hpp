@@ -149,14 +149,29 @@ struct index : knn::index {
     list_offsets_.swap(source.list_offsets_);
     centers_.swap(source.centers_);
     center_norms_.swap(source.center_norms_);
-    printf("moved ivf_flat::index to %p!\n", this);
+    printf("moved to ivf_flat::index(%p): {", this);
+    auto p = reinterpret_cast<uint8_t*>(this);
+    for (size_t i = 0; i < sizeof(*this); i++) {
+      printf("%02X", p[i]);
+    }
+    printf("}\n");
   }
   auto operator=(const index&) -> index& = delete;
   auto operator=(index&&) -> index& = delete;
   ~index()
   {
-    printf("~ivf_flat::index(%p)\n", this);
-    printf("~ivf_flat::index vals: (%u / %d)\n", veclen, int(metric));
+    printf("deleting ivf_flat::index(%p): {", this);
+    auto p = reinterpret_cast<uint8_t*>(this);
+    for (size_t i = 0; i < sizeof(*this); i++) {
+      printf("%02X", p[i]);
+    }
+    printf("}\n");
+    printf("Try to delete data_ (%p)\n", data_.get());
+    data_.reset();
+    printf("Has reset data_\n");
+    printf("Try to delete indices_ (%p)\n", indices_.get());
+    indices_.reset();
+    printf("Has reset indices_\n");
     printf("Try to delete center_norms_ (%p)\n", center_norms_.get());
     center_norms_.reset();
     printf("Has reset center_norms_\n");
@@ -169,12 +184,6 @@ struct index : knn::index {
     printf("Try to delete list_sizes_ (%p)\n", list_sizes_.get());
     list_sizes_.reset();
     printf("Has reset list_sizes_\n");
-    printf("Try to delete indices_ (%p)\n", indices_.get());
-    indices_.reset();
-    printf("Has reset indices_\n");
-    printf("Try to delete data_ (%p)\n", data_.get());
-    data_.reset();
-    printf("Has reset data_\n");
   };
 
   /**
@@ -201,7 +210,6 @@ struct index : knn::index {
                       ? std::make_unique<device_mdarray<float, extent_1d, row_major>>(*center_norms)
                       : nullptr)
   {
-    printf("Using main constructor ivf_flat::index(%p)\n", this);
     // Throw an error if the index content is inconsistent.
     RAFT_EXPECTS(dim() % veclen == 0, "dimensionality is not a multiple of the veclen");
     RAFT_EXPECTS(data_->extent(0) == indices_->extent(0), "inconsistent index size");
@@ -213,6 +221,12 @@ struct index : knn::index {
       "inconsistent number of lists (clusters)");
     RAFT_EXPECTS(reinterpret_cast<size_t>(data_->data()) % (veclen * sizeof(T)) == 0,
                  "The data storage pointer is not aligned to the vector length");
+    printf("new      ivf_flat::index(%p): {", this);
+    auto p = reinterpret_cast<uint8_t*>(this);
+    for (size_t i = 0; i < sizeof(*this); i++) {
+      printf("%02X", p[i]);
+    }
+    printf("}\n");
   }
 
  private:

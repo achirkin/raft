@@ -21,6 +21,7 @@
 #include <raft/cluster/detail/kmeans_common.cuh>
 #include <raft/common/nvtx.hpp>
 #include <raft/core/cudart_utils.hpp>
+#include <raft/core/layout_indexed.hpp>
 #include <raft/core/logger.hpp>
 #include <raft/distance/distance.cuh>
 #include <raft/distance/distance_types.hpp>
@@ -899,6 +900,16 @@ auto build_fine_clusters(const handle_t& handle,
       RAFT_EXPECTS(fine_clusters_nums[i] > 0,
                    "Number of fine clusters must be non-zero for a non-empty mesocluster");
     }
+
+    auto dataset_exts = make_extents<IdxT>(n_rows, dim);
+    auto dataset = make_mdspan<const T, IdxT, row_major, false, true>(dataset_mptr, dataset_exts);
+
+    auto mc_trainset_exts = make_extents<IdxT>(k, dim);
+    auto mc_indices_exts  = make_extents<IdxT>(k);
+    auto mc_mapping       = layout_indexed<row_major>::mapping<decltype(mc_trainset_exts)>(
+      dataset.mapping(), mc_trainset_ids, mc_indices_exts);
+    auto mc_trainset_span_t =
+      std::experimental::mdspan<const T, decltype(mc_trainset_exts)>(dataset_mptr, mc_mapping);
 
     utils::copy_selected(
       (IdxT)k, (IdxT)dim, dataset_mptr, mc_trainset_ids, (IdxT)dim, mc_trainset, (IdxT)dim, stream);

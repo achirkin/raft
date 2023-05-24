@@ -320,9 +320,25 @@ __global__ void compute_similarity_kernel(uint32_t n_rows,
       query_ix        = ordered_ix / n_probes;
       probe_ix        = ordered_ix % n_probes;
     }
-
+    uint32_t label                = cluster_labels[n_probes * query_ix + probe_ix];
     const uint32_t* chunk_indices = _chunk_indices + (n_probes * query_ix);
-    const float* query            = queries + (dim * query_ix);
+    uint32_t sample_offset        = 0;
+    if (probe_ix > 0) { sample_offset = chunk_indices[probe_ix - 1]; }
+    uint32_t n_samples            = chunk_indices[probe_ix] - sample_offset;
+    constexpr uint32_t kChunkSize = (kIndexGroupVecLen * 8u) / PqBits;
+    uint32_t pq_line_width        = div_rounding_up_unsafe(pq_dim, kChunkSize) * kIndexGroupVecLen;
+    if (threadIdx.x == 0) {
+      // prefetch requirements:
+      //   Size must be multiple of 16 and fit into L2.
+      auto cluster_byte_size = std::min<uint32_t>(pq_line_width * n_samples, 32 * 1024 * 1024);
+      asm volatile("cp.async.bulk.prefetch.L2.global [%0], %1;"
+                   :
+                   : "l"(pq_dataset[label]), "r"(cluster_byte_size));
+    }
+    // asm volatile("prefetch.global.L2::evict_normal [%0];"
+    //              : : "l"(pq_dataset[label] + 32 * threadIdx.x));
+
+    const float* query = queries + (dim * query_ix);
     OutT* out_scores;
     uint32_t* out_indices = nullptr;
     if constexpr (kManageLocalTopK) {
@@ -333,7 +349,6 @@ __global__ void compute_similarity_kernel(uint32_t n_rows,
       // Store all calculated distances to out_scores
       out_scores = _out_scores + max_samples * query_ix;
     }
-    uint32_t label              = cluster_labels[n_probes * query_ix + probe_ix];
     const float* cluster_center = cluster_centers + (dim * label);
     const float* pq_center;
     if (codebook_kind == codebook_gen::PER_SUBSPACE) {
@@ -426,12 +441,7 @@ __global__ void compute_similarity_kernel(uint32_t n_rows,
     using op_t         = uint32_t;
     using vec_t        = TxN_t<op_t, kIndexGroupVecLen / sizeof(op_t)>;
 
-    uint32_t sample_offset = 0;
-    if (probe_ix > 0) { sample_offset = chunk_indices[probe_ix - 1]; }
-    uint32_t n_samples            = chunk_indices[probe_ix] - sample_offset;
-    uint32_t n_samples_aligned    = group_align::roundUp(n_samples);
-    constexpr uint32_t kChunkSize = (kIndexGroupVecLen * 8u) / PqBits;
-    uint32_t pq_line_width        = div_rounding_up_unsafe(pq_dim, kChunkSize) * kIndexGroupVecLen;
+    uint32_t n_samples_aligned = group_align::roundUp(n_samples);
     auto pq_thread_data = pq_dataset[label] + group_align::roundDown(threadIdx.x) * pq_line_width +
                           group_align::mod(threadIdx.x) * vec_align::Value;
     pq_line_width *= blockDim.x;

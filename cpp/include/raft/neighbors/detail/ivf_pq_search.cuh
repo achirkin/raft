@@ -704,7 +704,7 @@ inline auto get_max_batch_size(uint32_t k,
   auto ws_size = [k, n_probes, max_samples](uint32_t bs) -> uint64_t {
     return uint64_t(is_local_topk_feasible(k, n_probes, bs) ? k * n_probes : max_samples) * bs;
   };
-  constexpr uint64_t kMaxWsSize = 1024 * 1024 * 1024;
+  constexpr uint64_t kMaxWsSize = 1024ull * 1024ull * 1024ull * 4ull;
   if (ws_size(max_batch_size) > kMaxWsSize) {
     uint32_t smaller_batch_size = bound_by_power_of_two(max_batch_size);
     // gradually reduce the batch size until we fit into the max size limit.
@@ -780,7 +780,7 @@ inline void search(raft::resources const& handle,
   }
 
   // Maximum number of query vectors to search at the same time.
-  const auto max_queries = std::min<uint32_t>(std::max<uint32_t>(n_queries, 1), 4096);
+  const auto max_queries = std::min<uint32_t>(std::max<uint32_t>(n_queries, 1), 16536);
   auto max_batch_size    = get_max_batch_size(k, n_probes, max_queries, max_samples);
 
   rmm::device_uvector<float> float_queries(max_queries * dim_ext, stream, mr);

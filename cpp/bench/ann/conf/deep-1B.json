@@ -1,10 +1,10 @@
 {
   "dataset" : {
     "name" : "deep-1B",
-    "base_file" : "data/deep-1B/base.1B.fbin",
-    "query_file" : "data/deep-1B/query.public.10K.fbin",
+    "base_file" : "/data/deep-1B/base.1B.fbin",
+    "query_file" : "/data/deep-1B/query.public.10K.fbin",
     // although distance should be "euclidean", faiss becomes much slower for that
-    "distance" : "inner_product"
+    "distance" : "euclidean"
   },
 
   "search_basic_param" : {
@@ -31,7 +31,7 @@
         {"nprobe":2000}
       ],
       "search_result_file" : "result/deep-1B/faiss_ivf_pq/M48-nlist50K"
-    },
+    }
 
 
   ]

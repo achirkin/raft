@@ -1,8 +1,7 @@
 {
   "dataset" : {
-    "name" : "bigann-100M",
+    "name" : "bigann-1B",
     "base_file" : "/data/bigann-1B/base.1B.u8bin",
-    "subset_size" : 100000000,
     "query_file" : "/data/bigann-1B/query.public.10K.u8bin",
     "distance" : "euclidean"
   },
@@ -23,7 +22,7 @@
         "pq_dim": 64,
         "ratio": 10
       },
-      "file": "index/bigann-100M/raft_ivf_pq/dimpq64-cluster5K",
+      "file": "index/bigann-1B/raft_ivf_pq/dimpq64-cluster5K",
       "search_params": [
         {
           "numProbes": 20,
@@ -66,13 +65,13 @@
           "smemLutDtype": "float"
         }
       ],
-      "search_result_file": "result/bigann-100M/raft_ivf_pq/dimpq64-cluster5K-float-float"
+      "search_result_file": "result/bigann-1B/raft_ivf_pq/dimpq64-cluster5K-float-float"
     },
     {
       "name" : "hnswlib.M12",
       "algo" : "hnswlib",
       "build_param": {"M":12, "efConstruction":500, "numThreads":32},
-      "file" : "index/bigann-100M/hnswlib/M12",
+      "file" : "index/bigann-1B/hnswlib/M12",
       "search_params" : [
         {"ef":10, "numThreads":1},
         {"ef":20, "numThreads":1},
@@ -85,13 +84,13 @@
         {"ef":600, "numThreads":1},
         {"ef":800, "numThreads":1}
       ],
-      "search_result_file" : "result/bigann-100M/hnswlib/M12"
+      "search_result_file" : "result/bigann-1B/hnswlib/M12"
     },
     {
       "name" : "hnswlib.M16",
       "algo" : "hnswlib",
       "build_param": {"M":16, "efConstruction":500, "numThreads":32},
-      "file" : "index/bigann-100M/hnswlib/M16",
+      "file" : "index/bigann-1B/hnswlib/M16",
       "search_params" : [
         {"ef":10, "numThreads":1},
         {"ef":20, "numThreads":1},
@@ -104,13 +103,13 @@
         {"ef":600, "numThreads":1},
         {"ef":800, "numThreads":1}
       ],
-      "search_result_file" : "result/bigann-100M/hnswlib/M16"
+      "search_result_file" : "result/bigann-1B/hnswlib/M16"
     },
     {
       "name" : "hnswlib.M24",
       "algo" : "hnswlib",
       "build_param": {"M":24, "efConstruction":500, "numThreads":32},
-      "file" : "index/bigann-100M/hnswlib/M24",
+      "file" : "index/bigann-1B/hnswlib/M24",
       "search_params" : [
         {"ef":10, "numThreads":1},
         {"ef":20, "numThreads":1},
@@ -123,13 +122,13 @@
         {"ef":600, "numThreads":1},
         {"ef":800, "numThreads":1}
       ],
-      "search_result_file" : "result/bigann-100M/hnswlib/M24"
+      "search_result_file" : "result/bigann-1B/hnswlib/M24"
     },
     {
       "name" : "hnswlib.M36",
       "algo" : "hnswlib",
       "build_param": {"M":36, "efConstruction":500, "numThreads":32},
-      "file" : "index/bigann-100M/hnswlib/M36",
+      "file" : "index/bigann-1B/hnswlib/M36",
       "search_params" : [
         {"ef":10, "numThreads":1},
         {"ef":20, "numThreads":1},
@@ -142,7 +141,7 @@
         {"ef":600, "numThreads":1},
         {"ef":800, "numThreads":1}
       ],
-      "search_result_file" : "result/bigann-100M/hnswlib/M36"
+      "search_result_file" : "result/bigann-1B/hnswlib/M36"
     },
 
 
@@ -154,7 +153,7 @@
         "niter" : 25,
         "ratio" : 5
       },
-      "file" : "index/bigann-100M/ivf_flat/nlist100K",
+      "file" : "index/bigann-1B/ivf_flat/nlist100K",
       "search_params" : [
         {"max_batch":10000, "max_k":10, "nprobe":20},
         {"max_batch":10000, "max_k":10, "nprobe":30},
@@ -165,7 +164,7 @@
         {"max_batch":10000, "max_k":10, "nprobe":500},
         {"max_batch":10000, "max_k":10, "nprobe":1000}
       ],
-      "search_result_file" : "result/bigann-100M/ivf_flat/nlist100K"
+      "search_result_file" : "result/bigann-1B/ivf_flat/nlist100K"
     }
 
 

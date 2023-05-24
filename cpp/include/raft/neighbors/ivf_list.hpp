@@ -16,7 +16,9 @@
 
 #pragma once
 
+#include <raft/core/device_resources.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/device_id.hpp>
 #include <raft/core/resource/thrust_policy.hpp>
 #include <raft/neighbors/ivf_list_types.hpp>
 
@@ -28,6 +30,7 @@
 #include <raft/core/serialize.hpp>
 #include <raft/util/integer_utils.hpp>
 
+#include <rmm/mr/device/managed_memory_resource.hpp>
 #include <thrust/fill.h>
 
 #include <fstream>
@@ -51,7 +54,22 @@ list<SpecT, SizeT, SpecExtraArgs...>::list(raft::resources const& res,
     capacity = std::min<SizeT>(capacity, spec.align_max);
   }
   try {
-    data    = make_device_mdarray<value_type>(res, spec.make_list_extents(capacity));
+    static thread_local std::shared_ptr<rmm::mr::managed_memory_resource> managed_mr(
+      new rmm::mr::managed_memory_resource());
+    auto mr = managed_mr.get();
+    raft::device_resources res2(resource::get_cuda_stream(res), nullptr, mr);
+    data           = make_device_mdarray<value_type>(res2, spec.make_list_extents(capacity));
+    auto data_ptr  = data.data_handle();
+    auto data_size = data.size() * sizeof(value_type);
+    // RAFT_LOG_INFO(
+    //   "Using managed memory resource at %p; data_ptr = %p, size = %zu", mr, data_ptr, data_size);
+    RAFT_CUDA_TRY(
+      cudaMemAdvise(data_ptr, data_size, cudaMemAdviseSetPreferredLocation, cudaCpuDeviceId));
+    RAFT_CUDA_TRY(
+      cudaMemAdvise(data_ptr, data_size, cudaMemAdviseSetAccessedBy, resource::get_device_id(res)));
+    RAFT_CUDA_TRY(
+      cudaMemAdvise(data_ptr, data_size, cudaMemAdviseSetReadMostly, resource::get_device_id(res)));
+
     indices = make_device_vector<index_type, SizeT>(res, capacity);
   } catch (std::bad_alloc& e) {
     RAFT_FAIL(

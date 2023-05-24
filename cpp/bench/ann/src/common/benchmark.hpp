@@ -18,6 +18,9 @@
 #endif
 #include <unistd.h>
 
+#include <rmm/mr/device/per_device_resource.hpp>
+#include <rmm/mr/device/pool_memory_resource.hpp>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -535,18 +538,25 @@ inline int run_main(int argc, char** argv)
   bool search_mode     = false;
   bool only_check      = false;
   std::string index_patterns("*");
+  size_t fixed_mem = 0;
 
   int opt;
-  while ((opt = getopt(argc, argv, "bscfi:h")) != -1) {
+  while ((opt = getopt(argc, argv, "bscfm:i:h")) != -1) {
     switch (opt) {
       case 'b': build_mode = true; break;
       case 's': search_mode = true; break;
       case 'c': only_check = true; break;
       case 'f': force_overwrite = true; break;
-      case 'i': index_patterns = optarg; break;
+      case 'i': index_patterns.assign(optarg); break;
+      case 'm': fixed_mem = 1024ull * 1024ull * 1024ull * size_t(std::atoi(optarg)); break;
       case 'h': cout << usage(argv[0]) << endl; return -1;
       default: cerr << "\n" << usage(argv[0]) << endl; return -1;
     }
+  }
+  if (fixed_mem > 0) {
+    auto mr = new rmm::mr::pool_memory_resource(
+      rmm::mr::get_current_device_resource(), fixed_mem, fixed_mem);
+    rmm::mr::set_current_device_resource(mr);
   }
   if (build_mode == search_mode) {
     std::cerr << "one and only one of -b and -s should be specified\n\n" << usage(argv[0]) << endl;

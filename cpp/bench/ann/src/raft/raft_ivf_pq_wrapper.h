@@ -15,6 +15,9 @@
  */
 #pragma once
 
+#include "../common/ann_types.hpp"
+#include "raft_ann_bench_utils.h"
+
 #include <raft/core/device_mdarray.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/device_resources.hpp>
@@ -25,17 +28,16 @@
 #include <raft/distance/distance_types.hpp>
 #include <raft/linalg/unary_op.cuh>
 #include <raft/neighbors/ivf_pq_types.hpp>
+#include <raft/random/rng.cuh>
 #include <raft/util/cudart_utils.hpp>
 #include <raft_runtime/neighbors/ivf_pq.hpp>
 #include <raft_runtime/neighbors/refine.hpp>
+
 #include <rmm/device_uvector.hpp>
 #include <rmm/mr/device/device_memory_resource.hpp>
 #include <rmm/mr/device/pool_memory_resource.hpp>
-#include <type_traits>
 
-#include "../common/ann_types.hpp"
-#include "raft_ann_bench_utils.h"
-#include <raft/util/cudart_utils.hpp>
+#include <type_traits>
 
 namespace raft::bench::ann {
 
@@ -78,8 +80,10 @@ class RaftIvfPQ : public ANN<T> {
   }
   void save(const std::string& file) const override;
   void load(const std::string&) override;
+  void simulate_use(cudaStream_t stream = 0) const override;
 
  private:
+  mutable raft::random::Rng rng_{1234ULL};
   raft::device_resources handle_;
   BuildParam index_params_;
   raft::neighbors::ivf_pq::search_params search_params_;
@@ -218,4 +222,50 @@ void RaftIvfPQ<T, IdxT>::search(const T* queries,
   resource::sync_stream(handle_);
   return;
 }
+
+template <typename T, typename IdxT>
+void RaftIvfPQ<T, IdxT>::simulate_use(cudaStream_t stream) const
+{
+  /*
+    The goal of this function is to probe a certain number of cluster randomly.
+    Assuming the cluster data is in managed memory, this should mimic the real-world state of the
+    index after some use. The point is that in a subsequent search we expect to see some UVM/L2 hits
+    and misses, to give us an idea of how much the performance should degrade depending on the
+    oversubscription ratio.
+  */
+  if (!index_.has_value()) { return; }
+  auto& index = index_.value();
+  size_t free_mem, total_mem;
+  RAFT_CUDA_TRY(cudaMemGetInfo(&free_mem, &total_mem));
+  size_t avg_mem_per_cluster =
+    raft::make_mdspan<uint8_t, size_t>(
+      nullptr,
+      neighbors::ivf_pq::list_spec<size_t, IdxT>(index.pq_bits(), index.pq_dim(), false)
+        .make_list_extents(div_rounding_up_safe<size_t>(index.size(), index.n_lists())))
+      .size();
+  size_t total_probes = div_rounding_up_safe(total_mem, avg_mem_per_cluster);
+  // set the number of queries to cover the whole GPU mem two times.
+  size_t num_queries = 2 * div_rounding_up_safe<size_t>(total_probes, search_params_.n_probes);
+  RAFT_LOG_INFO("Simulating index use (n_queries = %u, n_probes = %u)...",
+                num_queries,
+                search_params_.n_probes);
+  int k = 1;
+  raft::device_resources res;
+  rmm::device_uvector<uint32_t> cluster_ids(num_queries, stream);
+  auto queries = raft::make_device_matrix<float, uint32_t>(res, num_queries, index.dim());
+  rng_.uniformInt<uint32_t>(cluster_ids.data(), num_queries, 0, index.n_lists(), stream);
+  RAFT_CUDA_TRY(cudaMemcpy2DAsync(queries.data_handle(),
+                                  sizeof(float) * index.dim(),
+                                  index.centers().data_handle(),
+                                  sizeof(float) * index.dim_ext(),
+                                  sizeof(float) * index.dim(),
+                                  num_queries,
+                                  cudaMemcpyDefault,
+                                  stream));
+  auto neighbors = raft::make_device_matrix<IdxT, uint32_t>(res, num_queries, k);
+  auto distances = raft::make_device_matrix<float, uint32_t>(res, num_queries, k);
+  runtime::neighbors::ivf_pq::search(
+    res, search_params_, index, queries.view(), neighbors.view(), distances.view());
+}
+
 }  // namespace raft::bench::ann

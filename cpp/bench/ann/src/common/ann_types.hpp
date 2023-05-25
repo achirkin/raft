@@ -80,6 +80,10 @@ class ANN {
   // and should not release dataset before searching is finished.
   virtual void set_search_dataset(const T* /*dataset*/, size_t /*nrow*/){};
 
+  // Simulate the index use to put the UVM / GPU cache in a realistic state
+  // (runs before each search iteration).
+  virtual void simulate_use(cudaStream_t stream = 0) const {};
+
  protected:
   Metric metric_;
   int dim_;

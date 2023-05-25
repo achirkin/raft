@@ -68,7 +68,7 @@ struct using_pool_memory_res {
  */
 struct cuda_event_timer {
  private:
-  ::benchmark::State* state_;
+  ::benchmark::State& state_;
   rmm::cuda_stream_view stream_;
   cudaEvent_t start_;
   cudaEvent_t stop_;
@@ -79,11 +79,12 @@ struct cuda_event_timer {
    * @param stream CUDA stream we are measuring time on.
    */
   cuda_event_timer(::benchmark::State& state, rmm::cuda_stream_view stream)
-    : state_(&state), stream_(stream)
+    : state_(state), stream_(stream)
   {
     RAFT_CUDA_TRY(cudaEventCreate(&start_));
     RAFT_CUDA_TRY(cudaEventCreate(&stop_));
-    raft::interruptible::synchronize(stream_);
+    // raft::interruptible::synchronize(stream_);
+    stream_.synchronize();
     RAFT_CUDA_TRY(cudaEventRecord(start_, stream_));
   }
   cuda_event_timer() = delete;
@@ -96,10 +97,18 @@ struct cuda_event_timer {
   ~cuda_event_timer()
   {
     RAFT_CUDA_TRY_NO_THROW(cudaEventRecord(stop_, stream_));
-    raft::interruptible::synchronize(stop_);
+    // raft::interruptible::synchronize(stop_);
+    stream_.synchronize();
     float milliseconds = 0.0f;
     RAFT_CUDA_TRY_NO_THROW(cudaEventElapsedTime(&milliseconds, start_, stop_));
-    state_->SetIterationTime(milliseconds / 1000.f);
+    // state_.SetIterationTime(milliseconds / 1000.f);
+    auto found = state_.counters.find("GPU");
+    if (found != state_.counters.end()) {
+      found->second.value += milliseconds;
+    } else {
+      state_.counters["GPU"] =
+        ::benchmark::Counter(milliseconds, ::benchmark::Counter::kAvgIterations);
+    }
     RAFT_CUDA_TRY_NO_THROW(cudaEventDestroy(start_));
     RAFT_CUDA_TRY_NO_THROW(cudaEventDestroy(stop_));
   }
@@ -283,7 +292,7 @@ struct cartesian_registrar<Class> {
   {
     auto* b = ::benchmark::internal::RegisterBenchmarkInternal(
       new Fixture<Class, Fixed...>(case_name, fixed...));
-    b->UseManualTime();
+    b->UseRealTime();
     b->Unit(benchmark::kMillisecond);
   }
 };

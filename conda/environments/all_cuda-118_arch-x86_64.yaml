@@ -56,4 +56,8 @@ dependencies:
 - ucx-proc=*=gpu
 - ucx-py==0.32.*
 - ucx>=1.13.0
+- rapids-notebook-env=23.06.*
+- cudf
+- pandas
+- h5py
 name: all_cuda-118_arch-x86_64

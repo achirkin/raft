@@ -21,6 +21,7 @@
 
 #include <raft/random/rng.cuh>
 
+#include <raft/core/nvtx.hpp>
 #include <raft/neighbors/ivf_flat.cuh>
 #include <raft/neighbors/ivf_pq.cuh>
 #include <raft/spatial/knn/knn.cuh>
@@ -44,11 +45,13 @@ struct params {
   size_t n_queries;
   /** Number of nearest neighbours to find for every probe. */
   size_t k;
+  /** Number of probes (where applicable). */
+  size_t n_probes = 20;
 };
 
 inline auto operator<<(std::ostream& os, const params& p) -> std::ostream&
 {
-  os << p.n_samples << "#" << p.n_dims << "#" << p.n_queries << "#" << p.k;
+  os << p.n_samples << "#" << p.n_dims << "#" << p.n_queries << "#" << p.k << "#" << p.n_probes;
   return os;
 }
 
@@ -151,7 +154,7 @@ struct ivf_flat_knn {
               dist_t* out_dists,
               IdxT* out_idxs)
   {
-    search_params.n_probes = 20;
+    search_params.n_probes = ps.n_probes;
     raft::neighbors::ivf_flat::search(
       handle, search_params, *index, search_items, ps.n_queries, ps.k, out_idxs, out_dists);
   }
@@ -179,7 +182,8 @@ struct ivf_pq_knn {
               dist_t* out_dists,
               IdxT* out_idxs)
   {
-    search_params.n_probes = 20;
+    search_params.n_probes = ps.n_probes;
+
     auto queries_view =
       raft::make_device_matrix_view<const ValT, uint32_t>(search_items, ps.n_queries, ps.n_dims);
     auto idxs_view = raft::make_device_matrix_view<IdxT, uint32_t>(out_idxs, ps.n_queries, ps.k);
@@ -280,7 +284,10 @@ struct knn : public fixture {
     try {
       std::ostringstream label_stream;
       label_stream << params_ << "#" << strategy_ << "#" << scope_;
-      state.SetLabel(label_stream.str());
+      auto label = label_stream.str();
+      state.SetLabel(label.c_str());
+      common::nvtx::range bench_scope(label.c_str());
+
       raft::device_resources handle(stream);
       std::optional<ImplT> index;
 
@@ -357,6 +364,10 @@ struct knn : public fixture {
           default: break;
         }
       }
+
+      state.counters["QPS"] =
+        ::benchmark::Counter(state.counters["GPU"].value / (params_.n_queries * 1000.0),
+                             ::benchmark::Counter::kAvgIterations | ::benchmark::Counter::kInvert);
     } catch (raft::exception& e) {
       state.SkipWithError(e.what());
     } catch (std::bad_alloc& e) {
@@ -378,7 +389,19 @@ struct knn : public fixture {
 };
 
 inline const std::vector<params> kInputs{
-  {2000000, 128, 1000, 32}, {10000000, 128, 1000, 32}, {10000, 8192, 1000, 32}};
+  {1000000, 128, 1000, 32, 1},
+  {1000000, 128, 1000, 32, 10},
+  {1000000, 128, 1000, 32, 100},
+  {1000000, 128, 1000, 32, 200},
+  {1000000, 128, 1000, 32, 500},
+  {1000000, 128, 1000, 32, 1000},
+  {1000000, 128, 1, 32, 1},
+  {1000000, 128, 1, 32, 10},
+  {1000000, 128, 1, 32, 100},
+  {1000000, 128, 1, 32, 200},
+  {1000000, 128, 1, 32, 500},
+  {1000000, 128, 1, 32, 1000},
+};
 
 inline const std::vector<TransferStrategy> kAllStrategies{
   TransferStrategy::NO_COPY, TransferStrategy::MAP_PINNED, TransferStrategy::MANAGED};
@@ -387,10 +410,11 @@ inline const std::vector<TransferStrategy> kNoCopyOnly{TransferStrategy::NO_COPY
 inline const std::vector<Scope> kScopeFull{Scope::BUILD_SEARCH};
 inline const std::vector<Scope> kAllScopes{Scope::BUILD_SEARCH, Scope::SEARCH, Scope::BUILD};
 
-#define KNN_REGISTER(ValT, IdxT, ImplT, inputs, strats, scope)                 \
-  namespace BENCHMARK_PRIVATE_NAME(knn) {                                      \
-  using KNN = knn<ValT, IdxT, ImplT<ValT, IdxT>>;                              \
-  RAFT_BENCH_REGISTER(KNN, #ValT "/" #IdxT "/" #ImplT, inputs, strats, scope); \
+#define KNN_REGISTER(ValT, IdxT, ImplT, inputs, strats, scope)                   \
+  namespace BENCHMARK_PRIVATE_NAME(knn)                                          \
+  {                                                                              \
+    using KNN = knn<ValT, IdxT, ImplT<ValT, IdxT>>;                              \
+    RAFT_BENCH_REGISTER(KNN, #ValT "/" #IdxT "/" #ImplT, inputs, strats, scope); \
   }
 
 }  // namespace raft::bench::spatial

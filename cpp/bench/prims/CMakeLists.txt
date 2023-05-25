@@ -27,6 +27,8 @@ function(ConfigureBench)
 
   add_executable(${BENCH_NAME} ${ConfigureBench_PATH})
 
+  find_package(Threads REQUIRED)
+
   target_link_libraries(
     ${BENCH_NAME}
     PRIVATE raft::raft
@@ -154,4 +156,7 @@ if(BUILD_PRIMS_BENCH)
     LIB
     EXPLICIT_INSTANTIATE_ONLY
   )
+
+
+  ConfigureBench(NAME EXAMPLE_RAFT PATH example/main.cu LIB EXPLICIT_INSTANTIATE_ONLY)
 endif()

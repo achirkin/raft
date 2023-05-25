@@ -327,6 +327,7 @@ __global__ void compute_similarity_kernel(uint32_t n_rows,
     uint32_t n_samples            = chunk_indices[probe_ix] - sample_offset;
     constexpr uint32_t kChunkSize = (kIndexGroupVecLen * 8u) / PqBits;
     uint32_t pq_line_width        = div_rounding_up_unsafe(pq_dim, kChunkSize) * kIndexGroupVecLen;
+#if __CUDA_ARCH__ >= 900
     if (threadIdx.x == 0) {
       // prefetch requirements:
       //   Size must be multiple of 16 and fit into L2.
@@ -335,8 +336,10 @@ __global__ void compute_similarity_kernel(uint32_t n_rows,
                    :
                    : "l"(pq_dataset[label]), "r"(cluster_byte_size));
     }
+#endif
     // asm volatile("prefetch.global.L2::evict_normal [%0];"
-    //              : : "l"(pq_dataset[label] + 32 * threadIdx.x));
+    //              :
+    //              : "l"(pq_dataset[label] + 32 * threadIdx.x));
 
     const float* query = queries + (dim * query_ix);
     OutT* out_scores;

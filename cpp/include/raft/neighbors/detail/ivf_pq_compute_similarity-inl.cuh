@@ -330,8 +330,8 @@ __global__ void compute_similarity_kernel(uint32_t n_rows,
 #if __CUDA_ARCH__ >= 900
     if (threadIdx.x == 0) {
       // prefetch requirements:
-      //   Size must be multiple of 16 and fit into L2.
-      auto cluster_byte_size = std::min<uint32_t>(pq_line_width * n_samples, 32 * 1024 * 1024);
+      //   Size must be multiple of 16 and fit into L2 / nr of blocks.
+      auto cluster_byte_size = std::min<uint32_t>(pq_line_width * n_samples, 32 * 1024);
       asm volatile("cp.async.bulk.prefetch.L2.global [%0], %1;"
                    :
                    : "l"(pq_dataset[label]), "r"(cluster_byte_size));

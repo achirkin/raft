@@ -320,26 +320,7 @@ __global__ void compute_similarity_kernel(uint32_t n_rows,
       query_ix        = ordered_ix / n_probes;
       probe_ix        = ordered_ix % n_probes;
     }
-    uint32_t label                = cluster_labels[n_probes * query_ix + probe_ix];
-    const uint32_t* chunk_indices = _chunk_indices + (n_probes * query_ix);
-    uint32_t sample_offset        = 0;
-    if (probe_ix > 0) { sample_offset = chunk_indices[probe_ix - 1]; }
-    uint32_t n_samples            = chunk_indices[probe_ix] - sample_offset;
-    constexpr uint32_t kChunkSize = (kIndexGroupVecLen * 8u) / PqBits;
-    uint32_t pq_line_width        = div_rounding_up_unsafe(pq_dim, kChunkSize) * kIndexGroupVecLen;
-#if __CUDA_ARCH__ >= 900
-    if (threadIdx.x == 0) {
-      // prefetch requirements:
-      //   Size must be multiple of 16 and fit into L2 / nr of blocks.
-      auto cluster_byte_size = std::min<uint32_t>(pq_line_width * n_samples, 32 * 1024);
-      asm volatile("cp.async.bulk.prefetch.L2.global [%0], %1;"
-                   :
-                   : "l"(pq_dataset[label]), "r"(cluster_byte_size));
-    }
-#endif
-    // asm volatile("prefetch.global.L2::evict_normal [%0];"
-    //              :
-    //              : "l"(pq_dataset[label] + 32 * threadIdx.x));
+    uint32_t label = cluster_labels[n_probes * query_ix + probe_ix];
 
     const float* query = queries + (dim * query_ix);
     OutT* out_scores;
@@ -381,6 +362,27 @@ __global__ void compute_similarity_kernel(uint32_t n_rows,
       }
       __syncthreads();
     }
+
+    const uint32_t* chunk_indices = _chunk_indices + (n_probes * query_ix);
+    uint32_t sample_offset        = 0;
+    if (probe_ix > 0) { sample_offset = chunk_indices[probe_ix - 1]; }
+    uint32_t n_samples            = chunk_indices[probe_ix] - sample_offset;
+    constexpr uint32_t kChunkSize = (kIndexGroupVecLen * 8u) / PqBits;
+    uint32_t pq_line_width        = div_rounding_up_unsafe(pq_dim, kChunkSize) * kIndexGroupVecLen;
+#if __CUDA_ARCH__ >= 900
+    if (threadIdx.x == 0) {
+      // prefetch requirements:
+      //   To minimize the interference on L2 caching, ask the data for one iteration only.
+      auto cluster_byte_size =
+        std::min<uint32_t>(pq_line_width * n_samples, kIndexGroupVecLen * blockDim.x);
+      asm volatile("cp.async.bulk.prefetch.L2.global [%0], %1;"
+                   :
+                   : "l"(pq_dataset[label]), "r"(cluster_byte_size));
+    }
+#endif
+    // asm volatile("prefetch.global.L2::evict_normal [%0];"
+    //              :
+    //              : "l"(pq_dataset[label] + 32 * threadIdx.x));
 
     {
       // Create a lookup table

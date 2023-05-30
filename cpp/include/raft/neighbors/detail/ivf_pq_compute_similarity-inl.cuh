@@ -374,7 +374,7 @@ __global__ void compute_similarity_kernel(uint32_t n_rows,
       // prefetch requirements:
       //   To minimize the interference on L2 caching, ask the data for one iteration only.
       auto cluster_byte_size =
-        std::min<uint32_t>(pq_line_width * n_samples, kIndexGroupVecLen * blockDim.x);
+        std::min<uint32_t>(16 * 1024, pq_line_width * std::min<uint32_t>(n_samples, blockDim.x));
       asm volatile("cp.async.bulk.prefetch.L2.global [%0], %1;"
                    :
                    : "l"(pq_dataset[label]), "r"(cluster_byte_size));

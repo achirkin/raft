@@ -27,6 +27,10 @@
 #include <raft/util/vectorized.cuh>                           // raft::TxN_t
 #include <rmm/cuda_stream_view.hpp>                           // rmm::cuda_stream_view
 
+#if __CUDA_ARCH__ >= 900
+#include <cuda_awbarrier_primitives.h>
+#endif
+
 namespace raft::neighbors::ivf_pq::detail {
 
 /**
@@ -371,18 +375,21 @@ __global__ void compute_similarity_kernel(uint32_t n_rows,
     uint32_t pq_line_width        = div_rounding_up_unsafe(pq_dim, kChunkSize) * kIndexGroupVecLen;
 #if __CUDA_ARCH__ >= 900
     if (threadIdx.x == 0) {
-      // prefetch requirements:
-      //   To minimize the interference on L2 caching, ask the data for one iteration only.
-      auto cluster_byte_size =
-        std::min<uint32_t>(16 * 1024, pq_line_width * std::min<uint32_t>(n_samples, blockDim.x));
-      asm volatile("cp.async.bulk.prefetch.L2.global [%0], %1;"
-                   :
-                   : "l"(pq_dataset[label]), "r"(cluster_byte_size));
+      // Ask TMA to do something useless with cluster data in the hopes that this will trigger
+      // UVM to migrate the related pages to the GPU whilt not polluting the caches.
+      uint32_t cluster_byte_size = pq_line_width * n_samples;
+      __shared__ uint32_t dummy_result;
+      __shared__ __mbarrier_t dummy_barrier;
+      asm volatile(
+        "cp.reduce.async.bulk.shared::cluster.global.mbarrier::complete_tx::bytes "
+        "[%0], [%1], %2, [%3];"
+        :
+        : "l"(pq_dataset[label]),
+          "l"(&dummy_result),
+          "r"(cluster_byte_size),
+          "r"(static_cast<unsigned int>(__cvta_generic_to_shared(&dummy_barrier))));
     }
 #endif
-    // asm volatile("prefetch.global.L2::evict_normal [%0];"
-    //              :
-    //              : "l"(pq_dataset[label] + 32 * threadIdx.x));
 
     {
       // Create a lookup table

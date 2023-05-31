@@ -27,10 +27,6 @@
 #include <raft/util/vectorized.cuh>                           // raft::TxN_t
 #include <rmm/cuda_stream_view.hpp>                           // rmm::cuda_stream_view
 
-#if __CUDA_ARCH__ >= 900
-#include <cuda_awbarrier_primitives.h>
-#endif
-
 namespace raft::neighbors::ivf_pq::detail {
 
 /**
@@ -373,23 +369,21 @@ __global__ void compute_similarity_kernel(uint32_t n_rows,
     uint32_t n_samples            = chunk_indices[probe_ix] - sample_offset;
     constexpr uint32_t kChunkSize = (kIndexGroupVecLen * 8u) / PqBits;
     uint32_t pq_line_width        = div_rounding_up_unsafe(pq_dim, kChunkSize) * kIndexGroupVecLen;
-#if __CUDA_ARCH__ >= 900
-    if (threadIdx.x == 0) {
-      // Ask TMA to do something useless with cluster data in the hopes that this will trigger
-      // UVM to migrate the related pages to the GPU whilt not polluting the caches.
-      // uint32_t cluster_byte_size = pq_line_width * n_samples;
+    {
       __shared__ uint8_t dummy_result[16];
-      __shared__ __mbarrier_t dummy_barrier;
-      asm volatile(
-        "cp.async.bulk.shared::cluster.global.mbarrier::complete_tx::bytes "
-        "[%0], [%1], %2, [%3];"
-        :
-        : "r"(static_cast<unsigned int>(__cvta_generic_to_shared(dummy_result))),
-          "l"(pq_dataset[label]),
-          "r"(16u),
-          "r"(static_cast<unsigned int>(__cvta_generic_to_shared(&dummy_barrier))));
+      uint64_t policy{0};
+      asm volatile("createpolicy.fractional.L2::evict_first.b64 %0, 1.0;" : "=l"(policy));
+      constexpr uint32_t stride = 4096u;
+      int32_t cluster_byte_size = pq_line_width * n_samples;
+      auto dst                  = static_cast<unsigned int>(__cvta_generic_to_shared(dummy_result));
+      auto src                  = pq_dataset[label];
+      for (uint32_t offset = stride * threadIdx.x; offset + 16u <= cluster_byte_size;
+           offset += stride * blockDim.x) {
+        asm volatile("cp.async.cg.shared.global.L2::cache_hint [%0], [%1], 16, %2;"
+                     :
+                     : "r"(dst), "l"(src + offset), "l"(policy));
+      }
     }
-#endif
 
     {
       // Create a lookup table

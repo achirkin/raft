@@ -1139,15 +1139,25 @@ void recompute_internal_state(const raft::resources& res, index<IdxT>& index)
   auto tmp_res = resource::get_workspace_resource(res);
   rmm::device_uvector<uint32_t> sorted_sizes(index.n_lists(), stream, tmp_res);
 
+  std::vector<uint32_t> host_list_sizes(index.n_lists());
+  copy(host_list_sizes.data(), index.list_sizes().data_handle(), index.n_lists(), stream);
+  resource::sync_stream(res);
+  auto list_store_spec = list_spec<size_t, IdxT>{index.pq_bits(), index.pq_dim(), true};
+
   // Actualize the list pointers
-  auto data_ptrs = index.data_ptrs();
-  auto inds_ptrs = index.inds_ptrs();
+  auto data_ptrs           = index.data_ptrs();
+  auto inds_ptrs           = index.inds_ptrs();
+  auto host_list_bytesizes = index.host_list_bytesizes();
+  auto host_data_ptrs      = index.host_data_ptrs();
   for (uint32_t label = 0; label < index.n_lists(); label++) {
-    auto& list          = index.lists()[label];
-    const auto data_ptr = list ? list->data.data_handle() : nullptr;
-    const auto inds_ptr = list ? list->indices.data_handle() : nullptr;
-    copy(&data_ptrs(label), &data_ptr, 1, stream);
+    auto& list            = index.lists()[label];
+    host_data_ptrs(label) = list ? list->data.data_handle() : nullptr;
+    const auto inds_ptr   = list ? list->indices.data_handle() : nullptr;
+    copy(&data_ptrs(label), &host_data_ptrs(label), 1, stream);
     copy(&inds_ptrs(label), &inds_ptr, 1, stream);
+    auto dummy_mdspan = make_mdspan<uint8_t, size_t, row_major, true, false>(
+      nullptr, list_store_spec.make_list_extents(host_list_sizes[label]));
+    host_list_bytesizes(label) = list ? dummy_mdspan.size() : size_t{0};
   }
 
   // Sort the cluster sizes in the descending order.
@@ -1172,15 +1182,14 @@ void recompute_internal_state(const raft::resources& res, index<IdxT>& index)
                                            end_bit,
                                            stream);
   // copy the results to CPU
-  std::vector<uint32_t> sorted_sizes_host(index.n_lists());
-  copy(sorted_sizes_host.data(), sorted_sizes.data(), index.n_lists(), stream);
+  copy(host_list_sizes.data(), sorted_sizes.data(), index.n_lists(), stream);
   resource::sync_stream(res);
 
   // accumulate the sorted cluster sizes
   auto accum_sorted_sizes = index.accum_sorted_sizes();
   accum_sorted_sizes(0)   = 0;
-  for (uint32_t label = 0; label < sorted_sizes_host.size(); label++) {
-    accum_sorted_sizes(label + 1) = accum_sorted_sizes(label) + sorted_sizes_host[label];
+  for (uint32_t label = 0; label < host_list_sizes.size(); label++) {
+    accum_sorted_sizes(label + 1) = accum_sorted_sizes(label) + host_list_sizes[label];
   }
 }
 
@@ -1536,6 +1545,9 @@ auto build(raft::resources const& handle,
   utils::memzero(index.list_sizes().data_handle(), index.list_sizes().size(), stream);
   utils::memzero(index.data_ptrs().data_handle(), index.data_ptrs().size(), stream);
   utils::memzero(index.inds_ptrs().data_handle(), index.inds_ptrs().size(), stream);
+  utils::memzero(index.host_data_ptrs().data_handle(), index.host_data_ptrs().size(), stream);
+  utils::memzero(
+    index.host_list_bytesizes().data_handle(), index.host_list_bytesizes().size(), stream);
 
   {
     auto trainset_ratio = std::max<size_t>(

@@ -25,7 +25,10 @@
 #include <raft/util/device_atomics.cuh>                       // raft::atomicMin
 #include <raft/util/pow2_utils.cuh>                           // raft::Pow2
 #include <raft/util/vectorized.cuh>                           // raft::TxN_t
+#include <rmm/cuda_stream_pool.hpp>                           // rmm::cuda_stream_view
 #include <rmm/cuda_stream_view.hpp>                           // rmm::cuda_stream_view
+
+#include <omp.h>
 
 namespace raft::neighbors::ivf_pq::detail {
 
@@ -152,7 +155,7 @@ __device__ auto ivfpq_compute_score(uint32_t pq_dim,
   VecT pq_codes;
   OutT score{0};
   for (; pq_dim >= kChunkSize; pq_dim -= kChunkSize) {
-    *pq_codes.vectorized_data() = *pq_head;
+    *pq_codes.vectorized_data() = __ldcs(pq_head);
     pq_head += kIndexGroupSize;
     typename VecT::math_t pq_code = 0;
     ivfpq_compute_chunk<OutT, LutT, VecT, false, PqBits>(
@@ -161,7 +164,7 @@ __device__ auto ivfpq_compute_score(uint32_t pq_dim,
     if (score >= early_stop_limit) { return score; }
   }
   if (pq_dim > 0) {
-    *pq_codes.vectorized_data()   = *pq_head;
+    *pq_codes.vectorized_data()   = __ldcs(pq_head);
     typename VecT::math_t pq_code = 0;
     ivfpq_compute_chunk<OutT, LutT, VecT, true, PqBits>(
       score, pq_code, pq_codes, lut_head, lut_end);
@@ -272,8 +275,11 @@ __global__ void compute_similarity_kernel(uint32_t n_rows,
                                           SampleFilterT sample_filter,
                                           LutT* lut_scores,
                                           OutT* _out_scores,
-                                          uint32_t* _out_indices)
+                                          uint32_t* _out_indices,
+                                          uint32_t ib_offset,
+                                          uint32_t ib_limit)
 {
+  // __shared__ uint8_t dummy_result[16];
   /* Shared memory:
 
     * lut_scores: lookup table (LUT) of size = `pq_dim << PqBits`  (when EnableSMemLut)
@@ -305,13 +311,46 @@ __global__ void compute_similarity_kernel(uint32_t n_rows,
     }
   }
 
-  for (int ib = blockIdx.x; ib < n_queries * n_probes; ib += gridDim.x) {
+  for (int ib = blockIdx.x + ib_offset; ib < ib_limit; ib += gridDim.x) {
     if (ib >= gridDim.x) {
       // sync shared memory accesses on the second and further iterations
       __syncthreads();
     }
     uint32_t query_ix;
     uint32_t probe_ix;
+
+    // for (constexpr auto kLookahead : std::array<int, 3>{0, 100, 200}) {
+    //   if (index_list != nullptr && ib + kLookahead < ib_limit) {
+    //     // migrate the clusters we'll use in the next iterations from the host (UVM)
+    //     auto ordered_ix = index_list[ib + kLookahead];
+    //     query_ix        = ordered_ix / n_probes;
+    //     probe_ix        = ordered_ix % n_probes;
+    //     uint32_t label  = cluster_labels[n_probes * query_ix + probe_ix];
+
+    //     const uint32_t* chunk_indices = _chunk_indices + (n_probes * query_ix);
+    //     uint32_t sample_offset        = 0;
+    //     if (probe_ix > 0) { sample_offset = chunk_indices[probe_ix - 1]; }
+    //     uint32_t n_samples            = chunk_indices[probe_ix] - sample_offset;
+    //     constexpr uint32_t kChunkSize = (kIndexGroupVecLen * 8u) / PqBits;
+    //     uint32_t pq_line_width    = div_rounding_up_unsafe(pq_dim, kChunkSize) *
+    //     kIndexGroupVecLen; int32_t cluster_byte_size = pq_line_width * n_samples; uint64_t
+    //     policy{0}; asm volatile("createpolicy.fractional.L2::evict_first.b64 %0, 1.0;" :
+    //     "=l"(policy)); auto dst = static_cast<unsigned
+    //     int>(__cvta_generic_to_shared(dummy_result)); auto src =
+    //       pq_dataset[label] + Pow2<16>::roundDown(cluster_byte_size / blockDim.x) * threadIdx.x;
+    //     asm volatile("cp.async.cg.shared.global.L2::cache_hint [%0], [%1], 16, %2;"
+    //                  :
+    //                  : "r"(dst), "l"(src), "l"(policy));
+    //     // constexpr uint32_t stride = 4096u;
+    //     // for (uint32_t offset = stride * threadIdx.x; offset + 16u <= cluster_byte_size;
+    //     //      offset += stride * blockDim.x) {
+    //     //   asm volatile("cp.async.cg.shared.global.L2::cache_hint [%0], [%1], 16, %2;"
+    //     //                :
+    //     //                : "r"(dst), "l"(src + offset), "l"(policy));
+    //     // }
+    //   }
+    // }
+
     if (index_list == nullptr) {
       query_ix = ib % n_queries;
       probe_ix = ib / n_queries;
@@ -320,7 +359,7 @@ __global__ void compute_similarity_kernel(uint32_t n_rows,
       query_ix        = ordered_ix / n_probes;
       probe_ix        = ordered_ix % n_probes;
     }
-    uint32_t label = cluster_labels[n_probes * query_ix + probe_ix];
+    uint32_t label = cluster_labels[ib];
 
     const float* query = queries + (dim * query_ix);
     OutT* out_scores;
@@ -361,28 +400,6 @@ __global__ void compute_similarity_kernel(uint32_t n_rows,
         default: __builtin_unreachable();
       }
       __syncthreads();
-    }
-
-    const uint32_t* chunk_indices = _chunk_indices + (n_probes * query_ix);
-    uint32_t sample_offset        = 0;
-    if (probe_ix > 0) { sample_offset = chunk_indices[probe_ix - 1]; }
-    uint32_t n_samples            = chunk_indices[probe_ix] - sample_offset;
-    constexpr uint32_t kChunkSize = (kIndexGroupVecLen * 8u) / PqBits;
-    uint32_t pq_line_width        = div_rounding_up_unsafe(pq_dim, kChunkSize) * kIndexGroupVecLen;
-    {
-      __shared__ uint8_t dummy_result[16];
-      uint64_t policy{0};
-      asm volatile("createpolicy.fractional.L2::evict_first.b64 %0, 1.0;" : "=l"(policy));
-      constexpr uint32_t stride = 4096u;
-      int32_t cluster_byte_size = pq_line_width * n_samples;
-      auto dst                  = static_cast<unsigned int>(__cvta_generic_to_shared(dummy_result));
-      auto src                  = pq_dataset[label];
-      for (uint32_t offset = stride * threadIdx.x; offset + 16u <= cluster_byte_size;
-           offset += stride * blockDim.x) {
-        asm volatile("cp.async.cg.shared.global.L2::cache_hint [%0], [%1], 16, %2;"
-                     :
-                     : "r"(dst), "l"(src + offset), "l"(policy));
-      }
     }
 
     {
@@ -447,7 +464,13 @@ __global__ void compute_similarity_kernel(uint32_t n_rows,
     using op_t         = uint32_t;
     using vec_t        = TxN_t<op_t, kIndexGroupVecLen / sizeof(op_t)>;
 
-    uint32_t n_samples_aligned = group_align::roundUp(n_samples);
+    const uint32_t* chunk_indices = _chunk_indices + (n_probes * query_ix);
+    uint32_t sample_offset        = 0;
+    if (probe_ix > 0) { sample_offset = chunk_indices[probe_ix - 1]; }
+    uint32_t n_samples            = chunk_indices[probe_ix] - sample_offset;
+    uint32_t n_samples_aligned    = group_align::roundUp(n_samples);
+    constexpr uint32_t kChunkSize = (kIndexGroupVecLen * 8u) / PqBits;
+    uint32_t pq_line_width        = div_rounding_up_unsafe(pq_dim, kChunkSize) * kIndexGroupVecLen;
     auto pq_thread_data = pq_dataset[label] + group_align::roundDown(threadIdx.x) * pq_line_width +
                           group_align::mod(threadIdx.x) * vec_align::Value;
     pq_line_width *= blockDim.x;
@@ -609,6 +632,7 @@ struct selected {
   dim3 block_dim;
   size_t smem_size;
   size_t device_lut_size;
+  uint32_t wave_length;
 };
 
 template <typename OutT, typename LutT, typename SampleFilterT = NoneSampleFilter>
@@ -635,30 +659,86 @@ void compute_similarity_run(selected<OutT, LutT, SampleFilterT> s,
                             SampleFilterT sample_filter,
                             LutT* lut_scores,
                             OutT* _out_scores,
-                            uint32_t* _out_indices)
+                            uint32_t* _out_indices,
+                            const uint8_t* const* host_data_ptrs,
+                            const size_t* host_list_bytesizes)
 {
-  s.kernel<<<s.grid_dim, s.block_dim, s.smem_size, stream>>>(n_rows,
-                                                             dim,
-                                                             n_probes,
-                                                             pq_dim,
-                                                             n_queries,
-                                                             queries_offset,
-                                                             metric,
-                                                             codebook_kind,
-                                                             topk,
-                                                             max_samples,
-                                                             cluster_centers,
-                                                             pq_centers,
-                                                             pq_dataset,
-                                                             cluster_labels,
-                                                             _chunk_indices,
-                                                             queries,
-                                                             index_list,
-                                                             query_kths,
-                                                             sample_filter,
-                                                             lut_scores,
-                                                             _out_scores,
-                                                             _out_indices);
+  const uint32_t max_batch_size = s.wave_length * std::max<uint32_t>(2, n_probes / 10);
+  int cur_dev                   = -1;
+  RAFT_CUDA_TRY_NO_THROW(cudaGetDevice(&cur_dev));
+  cudaStreamSynchronize(stream);
+  cudaEvent_t prefetch_event;
+  cudaEvent_t process_event;
+  cudaEventCreateWithFlags(&prefetch_event, cudaEventDisableTiming);
+  cudaEventCreateWithFlags(&process_event, cudaEventDisableTiming);
+#pragma omp parallel num_threads(7)
+  {
+    const int num_prefetchers = omp_get_num_threads() - 1;
+    int cur_thread            = omp_get_thread_num();
+    uint32_t prev_label       = std::numeric_limits<uint32_t>::max();
+    int cur_prefetcher        = 0;
+    cudaStream_t cur_stream;
+    if (cur_thread == 0) {
+      cur_stream = stream;
+    } else {
+      cudaStreamCreateWithFlags(&cur_stream, cudaStreamNonBlocking);
+    }
+
+    for (uint32_t ib_offset = 0; ib_offset < n_queries * n_probes; ib_offset += max_batch_size) {
+      const auto ib_limit = std::min(ib_offset + max_batch_size, n_queries * n_probes);
+      if (cur_thread == 0) {
+        s.kernel<<<ib_limit - ib_offset, s.block_dim, s.smem_size, cur_stream>>>(n_rows,
+                                                                                 dim,
+                                                                                 n_probes,
+                                                                                 pq_dim,
+                                                                                 n_queries,
+                                                                                 queries_offset,
+                                                                                 metric,
+                                                                                 codebook_kind,
+                                                                                 topk,
+                                                                                 max_samples,
+                                                                                 cluster_centers,
+                                                                                 pq_centers,
+                                                                                 pq_dataset,
+                                                                                 cluster_labels,
+                                                                                 _chunk_indices,
+                                                                                 queries,
+                                                                                 index_list,
+                                                                                 query_kths,
+                                                                                 sample_filter,
+                                                                                 lut_scores,
+                                                                                 _out_scores,
+                                                                                 _out_indices,
+                                                                                 ib_offset,
+                                                                                 ib_limit);
+        cudaEventRecord(process_event, cur_stream);
+      } else {
+        const auto ib_offset_shifted = ib_offset > 0 ? (ib_offset + s.wave_length) : 0;
+        const auto ib_limit_shifted  = std::min(ib_limit + s.wave_length, n_queries * n_probes);
+        for (auto ib = ib_offset_shifted; ib < ib_limit_shifted; ib++) {
+          auto label = cluster_labels[ib];
+          if (label != prev_label) {
+            if ((++cur_prefetcher) == cur_thread) {
+              cudaMemPrefetchAsync(
+                host_data_ptrs[label], host_list_bytesizes[label], cur_dev, cur_stream);
+            }
+            if (cur_prefetcher >= num_prefetchers) { cur_prefetcher = 0; }
+            prev_label = label;
+          }
+        }
+        cudaEventRecord(prefetch_event, cur_stream);
+      }
+#pragma omp barrier
+      if (cur_thread == 0) {
+        cudaStreamWaitEvent(cur_stream, prefetch_event);
+      } else {
+        cudaStreamWaitEvent(cur_stream, process_event);
+      }
+    }
+    if (cur_thread > 0) { cudaStreamDestroy(cur_stream); }
+  }
+  cudaEventDestroy(prefetch_event);
+  cudaEventDestroy(process_event);
   RAFT_CHECK_CUDA(stream);
 }
 
@@ -860,10 +940,11 @@ auto compute_similarity_select(const cudaDeviceProp& dev_props,
           || (selected_perf.occupancy < cur.occupancy * kTargetOccupancy &&
               selected_perf.shmem_use >= cur.shmem_use)  // much improved occupancy
       ) {
-        selected_perf = cur;
+        selected_perf        = cur;
+        uint32_t wave_length = cur.blocks_per_sm * dev_props.multiProcessorCount;
         if (lut_is_in_shmem) {
           selected_config = {
-            kernel, dim3(n_blocks, 1, 1), dim3(n_threads, 1, 1), smem_size, size_t(0)};
+            kernel, dim3(n_blocks, 1, 1), dim3(n_threads, 1, 1), smem_size, size_t(0), wave_length};
         } else {
           // When the global memory is used for the lookup table, we need to minimize the grid
           // size; otherwise, the kernel may quickly run out of memory.
@@ -873,7 +954,8 @@ auto compute_similarity_select(const cudaDeviceProp& dev_props,
                              dim3(n_blocks_min, 1, 1),
                              dim3(n_threads, 1, 1),
                              smem_size,
-                             size_t(n_blocks_min) * size_t(pq_dim << pq_bits)};
+                             size_t(n_blocks_min) * size_t(pq_dim << pq_bits),
+                             wave_length};
         }
         // Actual shmem/L1 split wildly rounds up the specified preferred carveout, so we set here
         // a rather conservative bar; most likely, the kernel gets more shared memory than this,

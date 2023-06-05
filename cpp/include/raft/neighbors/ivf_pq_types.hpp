@@ -355,7 +355,9 @@ struct index : ann::index {
       centers_rot_{make_device_matrix<float, uint32_t>(handle, n_lists, this->rot_dim())},
       data_ptrs_{make_device_vector<uint8_t*, uint32_t>(handle, n_lists)},
       inds_ptrs_{make_device_vector<IdxT*, uint32_t>(handle, n_lists)},
-      accum_sorted_sizes_{make_host_vector<IdxT, uint32_t>(n_lists + 1)}
+      accum_sorted_sizes_{make_host_vector<IdxT, uint32_t>(n_lists + 1)},
+      host_data_ptrs_{make_host_vector<uint8_t*, uint32_t>(n_lists)},
+      host_list_bytesizes_{make_host_vector<size_t, uint32_t>(n_lists)}
   {
     check_consistency();
     accum_sorted_sizes_(n_lists) = 0;
@@ -411,6 +413,16 @@ struct index : ann::index {
     return make_mdspan<const uint8_t* const, uint32_t, row_major, false, true>(
       data_ptrs_.data_handle(), data_ptrs_.extents());
   }
+  inline auto host_data_ptrs() noexcept -> host_vector_view<uint8_t*, uint32_t, row_major>
+  {
+    return host_data_ptrs_.view();
+  }
+  [[nodiscard]] inline auto host_data_ptrs() const noexcept
+    -> host_vector_view<const uint8_t* const, uint32_t, row_major>
+  {
+    return make_mdspan<const uint8_t* const, uint32_t, row_major, true, false>(
+      host_data_ptrs_.data_handle(), host_data_ptrs_.extents());
+  }
 
   /** Pointers to the inverted lists (clusters) indices  [n_lists]. */
   inline auto inds_ptrs() noexcept -> device_vector_view<IdxT*, uint32_t, row_major>
@@ -464,6 +476,15 @@ struct index : ann::index {
   {
     return list_sizes_.view();
   }
+  inline auto host_list_bytesizes() noexcept -> host_vector_view<size_t, uint32_t, row_major>
+  {
+    return host_list_bytesizes_.view();
+  }
+  [[nodiscard]] inline auto host_list_bytesizes() const noexcept
+    -> host_vector_view<const size_t, uint32_t, row_major>
+  {
+    return host_list_bytesizes_.view();
+  }
 
   /** Cluster centers corresponding to the lists in the original space [n_lists, dim_ext] */
   inline auto centers() noexcept -> device_matrix_view<float, uint32_t, row_major>
@@ -507,6 +528,9 @@ struct index : ann::index {
   device_vector<uint8_t*, uint32_t, row_major> data_ptrs_;
   device_vector<IdxT*, uint32_t, row_major> inds_ptrs_;
   host_vector<IdxT, uint32_t, row_major> accum_sorted_sizes_;
+
+  host_vector<uint8_t*, uint32_t, row_major> host_data_ptrs_;
+  host_vector<size_t, uint32_t, row_major> host_list_bytesizes_;
 
   /** Throw an error if the index content is inconsistent. */
   void check_consistency()

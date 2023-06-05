@@ -63,7 +63,9 @@ __global__ void compute_similarity_kernel(uint32_t n_rows,
                                           SampleFilterT sample_filter,
                                           LutT* lut_scores,
                                           OutT* _out_scores,
-                                          uint32_t* _out_indices) RAFT_EXPLICIT;
+                                          uint32_t* _out_indices,
+                                          uint32_t ib_offset,
+                                          uint32_t ib_limit) RAFT_EXPLICIT;
 
 // The signature of the kernel defined by a minimal set of template parameters
 template <typename OutT, typename LutT, typename SampleFilterT>
@@ -77,6 +79,7 @@ struct selected {
   dim3 block_dim;
   size_t smem_size;
   size_t device_lut_size;
+  uint32_t wave_length;
 };
 
 template <typename OutT, typename LutT, typename SampleFilterT>
@@ -103,7 +106,9 @@ void compute_similarity_run(selected<OutT, LutT, SampleFilterT> s,
                             SampleFilterT sample_filter,
                             LutT* lut_scores,
                             OutT* _out_scores,
-                            uint32_t* _out_indices) RAFT_EXPLICIT;
+                            uint32_t* _out_indices,
+                            const uint8_t* const* host_data_ptrs,
+                            const size_t* host_list_bytesizes) RAFT_EXPLICIT;
 
 /**
  * Use heuristics to choose an optimal instance of the search kernel.
@@ -176,7 +181,9 @@ auto compute_similarity_select(const cudaDeviceProp& dev_props,
     SampleFilterT sample_filter,                                                         \
     LutT* lut_scores,                                                                    \
     OutT* _out_scores,                                                                   \
-    uint32_t* _out_indices);
+    uint32_t* _out_indices,                                                              \
+    const uint8_t* const* host_data_ptrs,                                                \
+    const size_t* host_list_bytesizes);
 
 #define COMMA ,
 instantiate_raft_neighbors_ivf_pq_detail_compute_similarity_select(

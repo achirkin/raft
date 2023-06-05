@@ -443,6 +443,8 @@ void ivfpq_search_worker(raft::resources const& handle,
       "Non-fused version of the search kernel is selected (manage_local_topk == false)");
   }
 
+  rmm::mr::managed_memory_resource mmr;
+  rmm::device_uvector<uint32_t> cluster_labels_out(n_queries * n_probes, stream, &mmr);
   rmm::device_uvector<uint32_t> index_list_sorted_buf(0, stream, mr);
   uint32_t* index_list_sorted = nullptr;
   rmm::device_uvector<uint32_t> num_samples(n_queries, stream, mr);
@@ -480,7 +482,6 @@ void ivfpq_search_worker(raft::resources const& handle,
     index_list_sorted_buf.resize(n_queries * n_probes, stream);
     auto index_list_buf =
       make_device_mdarray<uint32_t>(handle, mr, make_extents<uint32_t>(n_queries * n_probes));
-    rmm::device_uvector<uint32_t> cluster_labels_out(n_queries * n_probes, stream, mr);
     auto index_list   = index_list_buf.data_handle();
     index_list_sorted = index_list_sorted_buf.data();
 
@@ -569,7 +570,7 @@ void ivfpq_search_worker(raft::resources const& handle,
                          index.centers_rot().data_handle(),
                          index.pq_centers().data_handle(),
                          index.data_ptrs().data_handle(),
-                         clusters_to_probe,
+                         cluster_labels_out.data(),
                          chunk_index.data(),
                          query,
                          index_list_sorted,
@@ -577,7 +578,9 @@ void ivfpq_search_worker(raft::resources const& handle,
                          sample_filter,
                          device_lut.data(),
                          distances_buf.data(),
-                         neighbors_ptr);
+                         neighbors_ptr,
+                         index.host_data_ptrs().data_handle(),
+                         index.host_list_bytesizes().data_handle());
 
   // Select topk vectors for each query
   rmm::device_uvector<ScoreT> topk_dists(n_queries * topK, stream, mr);

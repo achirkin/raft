@@ -63,7 +63,7 @@ header = """
         uint32_t pq_dim,                                                \\
         uint32_t n_queries,                                             \\
         uint32_t queries_offset,                                        \\
-        raft::distance::DistanceType metric,                                  \\
+        raft::distance::DistanceType metric,                            \\
         raft::neighbors::ivf_pq::codebook_gen codebook_kind,            \\
         uint32_t topk,                                                  \\
         uint32_t max_samples,                                           \\
@@ -78,7 +78,9 @@ header = """
         SampleFilterT sample_filter,                                    \\
         LutT* lut_scores,                                               \\
         OutT* _out_scores,                                              \\
-        uint32_t* _out_indices);
+        uint32_t* _out_indices,                                         \\
+        const uint8_t* const* host_data_ptrs, \\
+        const size_t* host_list_bytesizes);
 
 
 #define COMMA ,

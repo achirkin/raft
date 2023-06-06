@@ -661,16 +661,17 @@ void compute_similarity_run(selected<OutT, LutT, SampleFilterT> s,
                             OutT* _out_scores,
                             uint32_t* _out_indices,
                             const uint8_t* const* host_data_ptrs,
-                            const size_t* host_list_bytesizes)
+                            const size_t* host_list_bytesizes,
+                            const uint32_t* host_cluster_labels)
 {
   const uint32_t max_batch_size = s.wave_length * std::max<uint32_t>(2, n_probes / 10);
   int cur_dev                   = -1;
-  RAFT_CUDA_TRY_NO_THROW(cudaGetDevice(&cur_dev));
-  cudaStreamSynchronize(stream);
+  RAFT_CUDA_TRY(cudaGetDevice(&cur_dev));
   cudaEvent_t prefetch_event;
   cudaEvent_t process_event;
-  cudaEventCreateWithFlags(&prefetch_event, cudaEventDisableTiming);
-  cudaEventCreateWithFlags(&process_event, cudaEventDisableTiming);
+  RAFT_CUDA_TRY(cudaEventCreateWithFlags(&prefetch_event, cudaEventDisableTiming));
+  RAFT_CUDA_TRY(cudaEventCreateWithFlags(&process_event, cudaEventDisableTiming));
+  RAFT_CUDA_TRY(cudaEventRecord(process_event, stream));  // denotes cluster labels are copied
 #pragma omp parallel num_threads(7)
   {
     const int num_prefetchers = omp_get_num_threads() - 1;
@@ -681,7 +682,9 @@ void compute_similarity_run(selected<OutT, LutT, SampleFilterT> s,
     if (cur_thread == 0) {
       cur_stream = stream;
     } else {
-      cudaStreamCreateWithFlags(&cur_stream, cudaStreamNonBlocking);
+      RAFT_CUDA_TRY_NO_THROW(cudaStreamCreateWithFlags(&cur_stream, cudaStreamNonBlocking));
+      // wait for the cluster labels to be passed from device to host - only in prefetch threads.
+      RAFT_CUDA_TRY_NO_THROW(cudaEventSynchronize(process_event));
     }
 
     for (uint32_t ib_offset = 0; ib_offset < n_queries * n_probes; ib_offset += max_batch_size) {
@@ -711,35 +714,41 @@ void compute_similarity_run(selected<OutT, LutT, SampleFilterT> s,
                                                                                  _out_indices,
                                                                                  ib_offset,
                                                                                  ib_limit);
-        cudaEventRecord(process_event, cur_stream);
+        RAFT_CUDA_TRY(cudaEventRecord(process_event, cur_stream));
       } else {
         const auto ib_offset_shifted = ib_offset > 0 ? (ib_offset + s.wave_length) : 0;
         const auto ib_limit_shifted  = std::min(ib_limit + s.wave_length, n_queries * n_probes);
         for (auto ib = ib_offset_shifted; ib < ib_limit_shifted; ib++) {
-          auto label = cluster_labels[ib];
+          auto label = host_cluster_labels[ib];
           if (label != prev_label) {
             if ((++cur_prefetcher) == cur_thread) {
-              cudaMemPrefetchAsync(
-                host_data_ptrs[label], host_list_bytesizes[label], cur_dev, cur_stream);
+              auto ptr  = host_data_ptrs[label];
+              auto size = host_list_bytesizes[label];
+              if (ptr != nullptr && size > 0) {
+                RAFT_CUDA_TRY_NO_THROW(cudaMemPrefetchAsync(
+                  host_data_ptrs[label], host_list_bytesizes[label], cur_dev, cur_stream));
+              }
             }
             if (cur_prefetcher >= num_prefetchers) { cur_prefetcher = 0; }
             prev_label = label;
           }
         }
-        cudaEventRecord(prefetch_event, cur_stream);
+        RAFT_CUDA_TRY_NO_THROW(cudaEventRecord(prefetch_event, cur_stream));
       }
 #pragma omp barrier
       if (cur_thread == 0) {
-        cudaStreamWaitEvent(cur_stream, prefetch_event);
+        RAFT_CUDA_TRY(cudaStreamWaitEvent(cur_stream, prefetch_event));
       } else {
-        cudaStreamWaitEvent(cur_stream, process_event);
+        RAFT_CUDA_TRY_NO_THROW(cudaStreamWaitEvent(cur_stream, process_event));
       }
     }
-    if (cur_thread > 0) { cudaStreamDestroy(cur_stream); }
+    if (cur_thread > 0) {
+      RAFT_CUDA_TRY_NO_THROW(cudaStreamDestroy(cur_stream));
+      cudaGetLastError();
+    }
   }
-  cudaEventDestroy(prefetch_event);
-  cudaEventDestroy(process_event);
-  RAFT_CHECK_CUDA(stream);
+  RAFT_CUDA_TRY(cudaEventDestroy(prefetch_event));
+  RAFT_CUDA_TRY(cudaEventDestroy(process_event));
 }
 
 /**

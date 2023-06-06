@@ -108,7 +108,8 @@ void compute_similarity_run(selected<OutT, LutT, SampleFilterT> s,
                             OutT* _out_scores,
                             uint32_t* _out_indices,
                             const uint8_t* const* host_data_ptrs,
-                            const size_t* host_list_bytesizes) RAFT_EXPLICIT;
+                            const size_t* host_list_bytesizes,
+                            const uint32_t* host_cluster_labels) RAFT_EXPLICIT;
 
 /**
  * Use heuristics to choose an optimal instance of the search kernel.
@@ -183,7 +184,8 @@ auto compute_similarity_select(const cudaDeviceProp& dev_props,
     OutT* _out_scores,                                                                   \
     uint32_t* _out_indices,                                                              \
     const uint8_t* const* host_data_ptrs,                                                \
-    const size_t* host_list_bytesizes);
+    const size_t* host_list_bytesizes,                                                   \
+    const uint32_t* host_cluster_labels);
 
 #define COMMA ,
 instantiate_raft_neighbors_ivf_pq_detail_compute_similarity_select(

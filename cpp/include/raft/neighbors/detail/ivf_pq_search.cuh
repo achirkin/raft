@@ -443,8 +443,11 @@ void ivfpq_search_worker(raft::resources const& handle,
       "Non-fused version of the search kernel is selected (manage_local_topk == false)");
   }
 
-  std::vector<uint32_t> cluster_labels_host(n_queries * n_probes);
-  rmm::device_uvector<uint32_t> cluster_labels_out(n_queries * n_probes, stream, mr);
+  uint32_t* cluster_labels_ptr      = nullptr;
+  uint32_t* cluster_labels_host_ptr = nullptr;
+
+  std::vector<uint32_t> cluster_labels_host(0);
+  rmm::device_uvector<uint32_t> cluster_labels_out(0, stream, mr);
   rmm::device_uvector<uint32_t> index_list_sorted_buf(0, stream, mr);
   uint32_t* index_list_sorted = nullptr;
   rmm::device_uvector<uint32_t> num_samples(n_queries, stream, mr);
@@ -480,6 +483,10 @@ void ivfpq_search_worker(raft::resources const& handle,
     // of a cluster by processing the cluster at the same time as much as
     // possible.
     index_list_sorted_buf.resize(n_queries * n_probes, stream);
+    cluster_labels_out.resize(n_queries * n_probes, stream);
+    cluster_labels_host.resize(n_queries * n_probes);
+    cluster_labels_ptr      = cluster_labels_out.data();
+    cluster_labels_host_ptr = cluster_labels_host.data();
     auto index_list_buf =
       make_device_mdarray<uint32_t>(handle, mr, make_extents<uint32_t>(n_queries * n_probes));
     auto index_list   = index_list_buf.data_handle();
@@ -493,7 +500,7 @@ void ivfpq_search_worker(raft::resources const& handle,
     cub::DeviceRadixSort::SortPairs(nullptr,
                                     cub_workspace_size,
                                     clusters_to_probe,
-                                    cluster_labels_out.data(),
+                                    cluster_labels_ptr,
                                     index_list,
                                     index_list_sorted,
                                     n_queries * n_probes,
@@ -504,15 +511,14 @@ void ivfpq_search_worker(raft::resources const& handle,
     cub::DeviceRadixSort::SortPairs(cub_workspace.data(),
                                     cub_workspace_size,
                                     clusters_to_probe,
-                                    cluster_labels_out.data(),
+                                    cluster_labels_ptr,
                                     index_list,
                                     index_list_sorted,
                                     n_queries * n_probes,
                                     begin_bit,
                                     end_bit,
                                     stream);
-    raft::copy(
-      cluster_labels_host.data(), cluster_labels_out.data(), cluster_labels_out.size(), stream);
+    raft::copy(cluster_labels_host_ptr, cluster_labels_ptr, cluster_labels_out.size(), stream);
   }
 
   // select and run the main search kernel
@@ -572,7 +578,7 @@ void ivfpq_search_worker(raft::resources const& handle,
                          index.centers_rot().data_handle(),
                          index.pq_centers().data_handle(),
                          index.data_ptrs().data_handle(),
-                         cluster_labels_out.data(),
+                         cluster_labels_ptr != nullptr ? cluster_labels_ptr : clusters_to_probe,
                          chunk_index.data(),
                          query,
                          index_list_sorted,
@@ -583,7 +589,7 @@ void ivfpq_search_worker(raft::resources const& handle,
                          neighbors_ptr,
                          index.host_data_ptrs().data_handle(),
                          index.host_list_bytesizes().data_handle(),
-                         cluster_labels_host.data());
+                         cluster_labels_host_ptr);
 
   // Select topk vectors for each query
   rmm::device_uvector<ScoreT> topk_dists(n_queries * topK, stream, mr);

@@ -664,15 +664,19 @@ void compute_similarity_run(selected<OutT, LutT, SampleFilterT> s,
                             const size_t* host_list_bytesizes,
                             const uint32_t* host_cluster_labels)
 {
-  const uint32_t max_batch_size = s.wave_length * std::max<uint32_t>(2, n_probes / 10);
+  const bool batched            = host_cluster_labels != nullptr;
+  const uint32_t max_batch_size = batched ? s.wave_length * std::max<uint32_t>(2, n_probes / 10)
+                                          : std::numeric_limits<uint32_t>::max();
   int cur_dev                   = -1;
-  RAFT_CUDA_TRY(cudaGetDevice(&cur_dev));
   cudaEvent_t prefetch_event;
   cudaEvent_t process_event;
-  RAFT_CUDA_TRY(cudaEventCreateWithFlags(&prefetch_event, cudaEventDisableTiming));
-  RAFT_CUDA_TRY(cudaEventCreateWithFlags(&process_event, cudaEventDisableTiming));
-  RAFT_CUDA_TRY(cudaEventRecord(process_event, stream));  // denotes cluster labels are copied
-#pragma omp parallel num_threads(7)
+  if (batched) {
+    RAFT_CUDA_TRY(cudaGetDevice(&cur_dev));
+    RAFT_CUDA_TRY(cudaEventCreateWithFlags(&prefetch_event, cudaEventDisableTiming));
+    RAFT_CUDA_TRY(cudaEventCreateWithFlags(&process_event, cudaEventDisableTiming));
+    RAFT_CUDA_TRY(cudaEventRecord(process_event, stream));  // denotes cluster labels are copied
+  }
+#pragma omp parallel num_threads(batched ? 7 : 1)
   {
     const int num_prefetchers = omp_get_num_threads() - 1;
     int cur_thread            = omp_get_thread_num();
@@ -690,31 +694,33 @@ void compute_similarity_run(selected<OutT, LutT, SampleFilterT> s,
     for (uint32_t ib_offset = 0; ib_offset < n_queries * n_probes; ib_offset += max_batch_size) {
       const auto ib_limit = std::min(ib_offset + max_batch_size, n_queries * n_probes);
       if (cur_thread == 0) {
-        s.kernel<<<ib_limit - ib_offset, s.block_dim, s.smem_size, cur_stream>>>(n_rows,
-                                                                                 dim,
-                                                                                 n_probes,
-                                                                                 pq_dim,
-                                                                                 n_queries,
-                                                                                 queries_offset,
-                                                                                 metric,
-                                                                                 codebook_kind,
-                                                                                 topk,
-                                                                                 max_samples,
-                                                                                 cluster_centers,
-                                                                                 pq_centers,
-                                                                                 pq_dataset,
-                                                                                 cluster_labels,
-                                                                                 _chunk_indices,
-                                                                                 queries,
-                                                                                 index_list,
-                                                                                 query_kths,
-                                                                                 sample_filter,
-                                                                                 lut_scores,
-                                                                                 _out_scores,
-                                                                                 _out_indices,
-                                                                                 ib_offset,
-                                                                                 ib_limit);
-        RAFT_CUDA_TRY(cudaEventRecord(process_event, cur_stream));
+        dim3 gs = s.grid_dim;
+        gs.x    = std::min(gs.x, ib_limit - ib_offset);
+        s.kernel<<<gs, s.block_dim, s.smem_size, cur_stream>>>(n_rows,
+                                                               dim,
+                                                               n_probes,
+                                                               pq_dim,
+                                                               n_queries,
+                                                               queries_offset,
+                                                               metric,
+                                                               codebook_kind,
+                                                               topk,
+                                                               max_samples,
+                                                               cluster_centers,
+                                                               pq_centers,
+                                                               pq_dataset,
+                                                               cluster_labels,
+                                                               _chunk_indices,
+                                                               queries,
+                                                               index_list,
+                                                               query_kths,
+                                                               sample_filter,
+                                                               lut_scores,
+                                                               _out_scores,
+                                                               _out_indices,
+                                                               ib_offset,
+                                                               ib_limit);
+        if (batched) { RAFT_CUDA_TRY(cudaEventRecord(process_event, cur_stream)); }
       } else {
         const auto ib_limit_shifted = std::min(ib_limit + s.wave_length, n_queries * n_probes);
         for (auto ib = ib_offset + s.wave_length; ib < ib_limit_shifted; ib++) {
@@ -736,7 +742,7 @@ void compute_similarity_run(selected<OutT, LutT, SampleFilterT> s,
       }
 #pragma omp barrier
       if (cur_thread == 0) {
-        RAFT_CUDA_TRY(cudaStreamWaitEvent(cur_stream, prefetch_event));
+        if (batched) { RAFT_CUDA_TRY(cudaStreamWaitEvent(cur_stream, prefetch_event)); }
       } else {
         RAFT_CUDA_TRY_NO_THROW(cudaStreamWaitEvent(cur_stream, process_event));
       }
@@ -746,8 +752,10 @@ void compute_similarity_run(selected<OutT, LutT, SampleFilterT> s,
       cudaGetLastError();
     }
   }
-  RAFT_CUDA_TRY(cudaEventDestroy(prefetch_event));
-  RAFT_CUDA_TRY(cudaEventDestroy(process_event));
+  if (batched) {
+    RAFT_CUDA_TRY(cudaEventDestroy(prefetch_event));
+    RAFT_CUDA_TRY(cudaEventDestroy(process_event));
+  }
 }
 
 /**

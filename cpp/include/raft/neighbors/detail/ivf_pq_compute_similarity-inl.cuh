@@ -716,9 +716,8 @@ void compute_similarity_run(selected<OutT, LutT, SampleFilterT> s,
                                                                                  ib_limit);
         RAFT_CUDA_TRY(cudaEventRecord(process_event, cur_stream));
       } else {
-        const auto ib_offset_shifted = ib_offset > 0 ? (ib_offset + s.wave_length) : 0;
-        const auto ib_limit_shifted  = std::min(ib_limit + s.wave_length, n_queries * n_probes);
-        for (auto ib = ib_offset_shifted; ib < ib_limit_shifted; ib++) {
+        const auto ib_limit_shifted = std::min(ib_limit + s.wave_length, n_queries * n_probes);
+        for (auto ib = ib_offset + s.wave_length; ib < ib_limit_shifted; ib++) {
           auto label = host_cluster_labels[ib];
           if (label != prev_label) {
             if ((++cur_prefetcher) == cur_thread) {

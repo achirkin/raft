@@ -66,6 +66,281 @@
         }
       ],
       "search_result_file": "result/bigann-1B/raft_ivf_pq/dimpq64-cluster100K-float-fp8"
+    },
+    {
+      "name": "raft_ivf_pq.dimpq64-cluster100K-float-fp8-prefetch-1",
+      "algo": "raft_ivf_pq",
+      "build_param": {
+        "niter": 50,
+        "nlist": 100000,
+        "pq_dim": 64,
+        "ratio": 20,
+        "stream_pool_size": 1
+      },
+      "file": "index/bigann-1B/raft_ivf_pq/dimpq64-cluster100K",
+      "search_params": [
+        {
+          "numProbes": 20,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 30,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 40,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 50,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 100,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 200,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 500,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 1000,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        }
+      ],
+      "search_result_file": "result/bigann-1B/raft_ivf_pq/dimpq64-cluster100K-float-fp8-prefetch-1"
+    },
+    {
+      "name": "raft_ivf_pq.dimpq64-cluster100K-float-fp8-prefetch-2",
+      "algo": "raft_ivf_pq",
+      "build_param": {
+        "niter": 50,
+        "nlist": 100000,
+        "pq_dim": 64,
+        "ratio": 20,
+        "stream_pool_size": 2
+      },
+      "file": "index/bigann-1B/raft_ivf_pq/dimpq64-cluster100K",
+      "search_params": [
+        {
+          "numProbes": 20,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 30,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 40,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 50,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 100,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 200,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 500,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 1000,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        }
+      ],
+      "search_result_file": "result/bigann-1B/raft_ivf_pq/dimpq64-cluster100K-float-fp8-prefetch-2"
+    },
+    {
+      "name": "raft_ivf_pq.dimpq64-cluster100K-float-fp8-prefetch-4",
+      "algo": "raft_ivf_pq",
+      "build_param": {
+        "niter": 50,
+        "nlist": 100000,
+        "pq_dim": 64,
+        "ratio": 20,
+        "stream_pool_size": 4
+      },
+      "file": "index/bigann-1B/raft_ivf_pq/dimpq64-cluster100K",
+      "search_params": [
+        {
+          "numProbes": 20,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 30,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 40,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 50,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 100,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 200,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 500,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 1000,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        }
+      ],
+      "search_result_file": "result/bigann-1B/raft_ivf_pq/dimpq64-cluster100K-float-fp8-prefetch-4"
+    },
+    {
+      "name": "raft_ivf_pq.dimpq64-cluster100K-float-fp8-prefetch-8",
+      "algo": "raft_ivf_pq",
+      "build_param": {
+        "niter": 50,
+        "nlist": 100000,
+        "pq_dim": 64,
+        "ratio": 20,
+        "stream_pool_size": 8
+      },
+      "file": "index/bigann-1B/raft_ivf_pq/dimpq64-cluster100K",
+      "search_params": [
+        {
+          "numProbes": 20,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 30,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 40,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 50,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 100,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 200,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 500,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 1000,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        }
+      ],
+      "search_result_file": "result/bigann-1B/raft_ivf_pq/dimpq64-cluster100K-float-fp8-prefetch-8"
+    },
+    {
+      "name": "raft_ivf_pq.dimpq64-cluster100K-float-fp8-prefetch-16",
+      "algo": "raft_ivf_pq",
+      "build_param": {
+        "niter": 50,
+        "nlist": 100000,
+        "pq_dim": 64,
+        "ratio": 20,
+        "stream_pool_size": 16
+      },
+      "file": "index/bigann-1B/raft_ivf_pq/dimpq64-cluster100K",
+      "search_params": [
+        {
+          "numProbes": 20,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 30,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 40,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 50,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 100,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 200,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 500,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        },
+        {
+          "numProbes": 1000,
+          "internalDistanceDtype": "float",
+          "smemLutDtype": "fp8"
+        }
+      ],
+      "search_result_file": "result/bigann-1B/raft_ivf_pq/dimpq64-cluster100K-float-fp8-prefetch-16"
     }
   ]
 }

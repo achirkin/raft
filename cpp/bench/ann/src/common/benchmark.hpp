@@ -372,6 +372,7 @@ inline void search(const Dataset<T>* dataset, const std::vector<Configuration::I
         for (std::size_t batch_id = 0; batch_id < num_batches; ++batch_id) {
           std::size_t row       = batch_id * batch_size;
           int actual_batch_size = (batch_id == num_batches - 1) ? query_set_size - row : batch_size;
+          RAFT_CUDA_TRY(cudaDeviceSynchronize());
           algo->simulate_use(stream);
           RAFT_CUDA_TRY(cudaStreamSynchronize(stream));
 #ifdef NVTX

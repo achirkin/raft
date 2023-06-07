@@ -432,13 +432,14 @@ __global__ void compute_similarity_kernel(uint32_t n_rows,
 
     uint32_t sample_offset = 0;
     if (probe_ix > 0) { sample_offset = chunk_indices[probe_ix - 1]; }
-    uint32_t n_samples            = chunk_indices[probe_ix] - sample_offset;
-    uint32_t n_samples_aligned    = group_align::roundUp(n_samples);
-    constexpr uint32_t kChunkSize = (kIndexGroupVecLen * 8u) / PqBits;
-    uint32_t pq_line_width        = div_rounding_up_unsafe(pq_dim, kChunkSize) * kIndexGroupVecLen;
-    auto pq_thread_data = pq_dataset[label] + group_align::roundDown(threadIdx.x) * pq_line_width +
-                          group_align::mod(threadIdx.x) * vec_align::Value;
-    pq_line_width *= blockDim.x;
+    const uint32_t n_samples         = chunk_indices[probe_ix] - sample_offset;
+    const uint32_t n_samples_aligned = group_align::roundUp(n_samples);
+    constexpr uint32_t kChunkSize    = (kIndexGroupVecLen * 8u) / PqBits;
+    const uint32_t pq_dim_2          = div_rounding_up_unsafe(pq_dim, kChunkSize);
+    const auto* pq_thread_data       = reinterpret_cast<const vec_t::io_t*>(pq_dataset[label]) +
+                                 group_align::roundDown(threadIdx.x) * pq_dim_2 +
+                                 group_align::mod(threadIdx.x);
+    const uint32_t pq_stride = pq_dim_2 * blockDim.x;
 
     constexpr OutT kDummy = upper_bound<OutT>();
     OutT query_kth        = kDummy;
@@ -461,16 +462,13 @@ __global__ void compute_similarity_kernel(uint32_t n_rows,
 
     // Compute a distance for each sample
     for (uint32_t i = threadIdx.x; i < n_samples_aligned;
-         i += blockDim.x, pq_thread_data += pq_line_width) {
+         i += blockDim.x, pq_thread_data += pq_stride) {
       OutT score = kDummy;
       bool valid = i < n_samples;
       // Check bounds and that the sample is acceptable for the query
       if (valid && sample_filter(queries_offset + query_ix, label, i)) {
         score = ivfpq_compute_score<OutT, LutT, vec_t, PqBits>(
-          pq_dim,
-          reinterpret_cast<const vec_t::io_t*>(pq_thread_data),
-          lut_scores,
-          early_stop_limit);
+          pq_dim, pq_thread_data, lut_scores, early_stop_limit);
       }
       if constexpr (kManageLocalTopK) {
         block_topk.add(score, sample_offset + i);

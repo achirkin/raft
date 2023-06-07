@@ -312,44 +312,12 @@ __global__ void compute_similarity_kernel(uint32_t n_rows,
   }
 
   for (int ib = blockIdx.x + ib_offset; ib < ib_limit; ib += gridDim.x) {
-    if (ib >= gridDim.x) {
+    if (ib >= ib_offset + gridDim.x) {
       // sync shared memory accesses on the second and further iterations
       __syncthreads();
     }
     uint32_t query_ix;
     uint32_t probe_ix;
-
-    // for (constexpr auto kLookahead : std::array<int, 3>{0, 100, 200}) {
-    //   if (index_list != nullptr && ib + kLookahead < ib_limit) {
-    //     // migrate the clusters we'll use in the next iterations from the host (UVM)
-    //     auto ordered_ix = index_list[ib + kLookahead];
-    //     query_ix        = ordered_ix / n_probes;
-    //     probe_ix        = ordered_ix % n_probes;
-    //     uint32_t label  = cluster_labels[n_probes * query_ix + probe_ix];
-
-    //     const uint32_t* chunk_indices = _chunk_indices + (n_probes * query_ix);
-    //     uint32_t sample_offset        = 0;
-    //     if (probe_ix > 0) { sample_offset = chunk_indices[probe_ix - 1]; }
-    //     uint32_t n_samples            = chunk_indices[probe_ix] - sample_offset;
-    //     constexpr uint32_t kChunkSize = (kIndexGroupVecLen * 8u) / PqBits;
-    //     uint32_t pq_line_width    = div_rounding_up_unsafe(pq_dim, kChunkSize) *
-    //     kIndexGroupVecLen; int32_t cluster_byte_size = pq_line_width * n_samples; uint64_t
-    //     policy{0}; asm volatile("createpolicy.fractional.L2::evict_first.b64 %0, 1.0;" :
-    //     "=l"(policy)); auto dst = static_cast<unsigned
-    //     int>(__cvta_generic_to_shared(dummy_result)); auto src =
-    //       pq_dataset[label] + Pow2<16>::roundDown(cluster_byte_size / blockDim.x) * threadIdx.x;
-    //     asm volatile("cp.async.cg.shared.global.L2::cache_hint [%0], [%1], 16, %2;"
-    //                  :
-    //                  : "r"(dst), "l"(src), "l"(policy));
-    //     // constexpr uint32_t stride = 4096u;
-    //     // for (uint32_t offset = stride * threadIdx.x; offset + 16u <= cluster_byte_size;
-    //     //      offset += stride * blockDim.x) {
-    //     //   asm volatile("cp.async.cg.shared.global.L2::cache_hint [%0], [%1], 16, %2;"
-    //     //                :
-    //     //                : "r"(dst), "l"(src + offset), "l"(policy));
-    //     // }
-    //   }
-    // }
 
     if (index_list == nullptr) {
       query_ix = ib % n_queries;
@@ -359,9 +327,10 @@ __global__ void compute_similarity_kernel(uint32_t n_rows,
       query_ix        = ordered_ix / n_probes;
       probe_ix        = ordered_ix % n_probes;
     }
-    uint32_t label = cluster_labels[ib];
+    const uint32_t label = cluster_labels[ib];
 
-    const float* query = queries + (dim * query_ix);
+    const uint32_t* chunk_indices = _chunk_indices + (n_probes * query_ix);
+    const float* query            = queries + (dim * query_ix);
     OutT* out_scores;
     uint32_t* out_indices = nullptr;
     if constexpr (kManageLocalTopK) {
@@ -464,8 +433,7 @@ __global__ void compute_similarity_kernel(uint32_t n_rows,
     using op_t         = uint32_t;
     using vec_t        = TxN_t<op_t, kIndexGroupVecLen / sizeof(op_t)>;
 
-    const uint32_t* chunk_indices = _chunk_indices + (n_probes * query_ix);
-    uint32_t sample_offset        = 0;
+    uint32_t sample_offset = 0;
     if (probe_ix > 0) { sample_offset = chunk_indices[probe_ix - 1]; }
     uint32_t n_samples            = chunk_indices[probe_ix] - sample_offset;
     uint32_t n_samples_aligned    = group_align::roundUp(n_samples);

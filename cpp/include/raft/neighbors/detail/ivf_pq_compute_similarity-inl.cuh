@@ -25,7 +25,13 @@
 #include <raft/util/device_atomics.cuh>                       // raft::atomicMin
 #include <raft/util/pow2_utils.cuh>                           // raft::Pow2
 #include <raft/util/vectorized.cuh>                           // raft::TxN_t
-#include <rmm/cuda_stream_view.hpp>                           // rmm::cuda_stream_view
+
+#include <raft/core/resource/cuda_event.hpp>
+#include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/cuda_stream_pool.hpp>
+#include <raft/core/resource/detail/stream_sync_event.hpp>
+#include <raft/core/resource/device_id.hpp>
+#include <raft/core/resources.hpp>
 
 #include <omp.h>
 
@@ -592,8 +598,8 @@ struct selected {
 };
 
 template <typename OutT, typename LutT, typename SampleFilterT = NoneSampleFilter>
-void compute_similarity_run(selected<OutT, LutT, SampleFilterT> s,
-                            rmm::cuda_stream_view stream,
+void compute_similarity_run(const resources& res,
+                            selected<OutT, LutT, SampleFilterT> s,
                             uint32_t n_rows,
                             uint32_t dim,
                             uint32_t n_probes,
@@ -620,29 +626,27 @@ void compute_similarity_run(selected<OutT, LutT, SampleFilterT> s,
                             const size_t* host_list_bytesizes,
                             const uint32_t* host_cluster_labels)
 {
-  const bool batched            = host_cluster_labels != nullptr;
-  const uint32_t max_batch_size = batched ? s.wave_length * std::max<uint32_t>(2, n_probes / 10)
-                                          : std::numeric_limits<uint32_t>::max();
-  int cur_dev                   = -1;
-  cudaEvent_t prefetch_event;
-  cudaEvent_t process_event;
-  if (batched) {
-    RAFT_CUDA_TRY(cudaGetDevice(&cur_dev));
+  const bool prefetch           = host_cluster_labels != nullptr;
+  const uint32_t max_batch_size = prefetch ? s.wave_length * std::max<uint32_t>(2, n_probes / 10)
+                                           : std::numeric_limits<uint32_t>::max();
+  const int cur_dev             = prefetch ? resource::get_device_id(res) : -1;
+  const int num_prefetchers     = prefetch ? resource::get_stream_pool_size(res) : 0;
+  cudaEvent_t process_event     = nullptr;
+  cudaEvent_t prefetch_event    = nullptr;
+  if (prefetch) {
+    process_event = resource::detail::get_cuda_stream_sync_event(res);
     RAFT_CUDA_TRY(cudaEventCreateWithFlags(&prefetch_event, cudaEventDisableTiming));
-    RAFT_CUDA_TRY(cudaEventCreateWithFlags(&process_event, cudaEventDisableTiming));
-    RAFT_CUDA_TRY(cudaEventRecord(process_event, stream));  // denotes cluster labels are copied
   }
-#pragma omp parallel num_threads(batched ? 7 : 1)
+#pragma omp parallel num_threads(num_prefetchers + 1)
   {
-    const int num_prefetchers = omp_get_num_threads() - 1;
-    int cur_thread            = omp_get_thread_num();
-    uint32_t prev_label       = std::numeric_limits<uint32_t>::max();
-    int cur_prefetcher        = 0;
+    int cur_thread      = omp_get_thread_num();
+    uint32_t prev_label = std::numeric_limits<uint32_t>::max();
+    int cur_prefetcher  = 0;
     cudaStream_t cur_stream;
     if (cur_thread == 0) {
-      cur_stream = stream;
+      cur_stream = resource::get_cuda_stream(res);
     } else {
-      RAFT_CUDA_TRY_NO_THROW(cudaStreamCreateWithFlags(&cur_stream, cudaStreamNonBlocking));
+      cur_stream = resource::get_stream_from_stream_pool(res, cur_thread - 1);
       // wait for the cluster labels to be passed from device to host - only in prefetch threads.
       RAFT_CUDA_TRY_NO_THROW(cudaEventSynchronize(process_event));
     }
@@ -676,7 +680,7 @@ void compute_similarity_run(selected<OutT, LutT, SampleFilterT> s,
                                                                _out_indices,
                                                                ib_offset,
                                                                ib_limit);
-        if (batched) { RAFT_CUDA_TRY(cudaEventRecord(process_event, cur_stream)); }
+        if (prefetch) { RAFT_CUDA_TRY(cudaEventRecord(process_event, cur_stream)); }
       } else {
         const auto ib_limit_shifted = std::min(ib_limit + s.wave_length, n_queries * n_probes);
         for (auto ib = ib_offset + s.wave_length; ib < ib_limit_shifted; ib++) {
@@ -686,7 +690,7 @@ void compute_similarity_run(selected<OutT, LutT, SampleFilterT> s,
               auto ptr  = host_data_ptrs[label];
               auto size = host_list_bytesizes[label];
               if (ptr != nullptr && size > 0) {
-                RAFT_CUDA_TRY_NO_THROW(cudaMemPrefetchAsync(
+                RAFT_CUDA_TRY(cudaMemPrefetchAsync(
                   host_data_ptrs[label], host_list_bytesizes[label], cur_dev, cur_stream));
               }
             }
@@ -694,24 +698,17 @@ void compute_similarity_run(selected<OutT, LutT, SampleFilterT> s,
             prev_label = label;
           }
         }
-        RAFT_CUDA_TRY_NO_THROW(cudaEventRecord(prefetch_event, cur_stream));
+        RAFT_CUDA_TRY(cudaEventRecord(prefetch_event, cur_stream));
       }
 #pragma omp barrier
       if (cur_thread == 0) {
-        if (batched) { RAFT_CUDA_TRY(cudaStreamWaitEvent(cur_stream, prefetch_event)); }
+        if (prefetch) { RAFT_CUDA_TRY(cudaStreamWaitEvent(cur_stream, prefetch_event)); }
       } else {
-        RAFT_CUDA_TRY_NO_THROW(cudaStreamWaitEvent(cur_stream, process_event));
+        RAFT_CUDA_TRY(cudaStreamWaitEvent(cur_stream, process_event));
       }
     }
-    if (cur_thread > 0) {
-      RAFT_CUDA_TRY_NO_THROW(cudaStreamDestroy(cur_stream));
-      cudaGetLastError();
-    }
   }
-  if (batched) {
-    RAFT_CUDA_TRY(cudaEventDestroy(prefetch_event));
-    RAFT_CUDA_TRY(cudaEventDestroy(process_event));
-  }
+  if (prefetch) { RAFT_CUDA_TRY(cudaEventDestroy(prefetch_event)); }
 }
 
 /**

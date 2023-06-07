@@ -18,12 +18,12 @@
 
 #include <cuda_fp16.h>                               // __half
 #include <raft/core/detail/macros.hpp>               // RAFT_WEAK_FUNCTION
+#include <raft/core/resources.hpp>
 #include <raft/distance/distance_types.hpp>          // raft::distance::DistanceType
 #include <raft/neighbors/detail/ivf_pq_fp_8bit.cuh>  // raft::neighbors::ivf_pq::detail::fp_8bit
 #include <raft/neighbors/detail/sample_filter.cuh>   // NoneSampleFilter
 #include <raft/neighbors/ivf_pq_types.hpp>           // raft::neighbors::ivf_pq::codebook_gen
 #include <raft/util/raft_explicit.hpp>               // RAFT_EXPLICIT
-#include <rmm/cuda_stream_view.hpp>                  // rmm::cuda_stream_view
 
 #ifdef RAFT_EXPLICIT_INSTANTIATE_ONLY
 
@@ -83,8 +83,8 @@ struct selected {
 };
 
 template <typename OutT, typename LutT, typename SampleFilterT>
-void compute_similarity_run(selected<OutT, LutT, SampleFilterT> s,
-                            rmm::cuda_stream_view stream,
+void compute_similarity_run(const resources& res,
+                            selected<OutT, LutT, SampleFilterT> s,
                             uint32_t n_rows,
                             uint32_t dim,
                             uint32_t n_probes,
@@ -159,8 +159,8 @@ auto compute_similarity_select(const cudaDeviceProp& dev_props,
                                                                                          \
   extern template void                                                                   \
   raft::neighbors::ivf_pq::detail::compute_similarity_run<OutT, LutT, SampleFilterT>(    \
-    raft::neighbors::ivf_pq::detail::selected<OutT, LutT, SampleFilterT> s,              \
-    rmm::cuda_stream_view stream,                                                        \
+    const resources& res,                                                                \
+    selected<OutT, LutT, SampleFilterT> s,                                               \
     uint32_t n_rows,                                                                     \
     uint32_t dim,                                                                        \
     uint32_t n_probes,                                                                   \

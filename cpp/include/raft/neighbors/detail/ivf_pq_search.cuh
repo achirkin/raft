@@ -31,7 +31,6 @@
 #include <raft/core/logger.hpp>
 #include <raft/core/nvtx.hpp>
 #include <raft/core/operators.hpp>
-#include <raft/core/resources.hpp>
 #include <raft/distance/distance_types.hpp>
 #include <raft/linalg/gemm.cuh>
 #include <raft/linalg/map.cuh>
@@ -43,6 +42,10 @@
 #include <raft/util/device_loads_stores.cuh>
 #include <raft/util/pow2_utils.cuh>
 #include <raft/util/vectorized.cuh>
+
+#include <raft/core/resource/cuda_stream_pool.hpp>
+#include <raft/core/resource/detail/stream_sync_event.hpp>
+#include <raft/core/resources.hpp>
 
 #include <rmm/cuda_stream_view.hpp>
 #include <rmm/mr/device/per_device_resource.hpp>
@@ -442,12 +445,14 @@ void ivfpq_search_worker(raft::resources const& handle,
     RAFT_LOG_DEBUG(
       "Non-fused version of the search kernel is selected (manage_local_topk == false)");
   }
+  const bool prefetch = resource::get_stream_pool_size(handle) > 0;
 
-  uint32_t* index_list_sorted       = nullptr;
-  uint32_t* cluster_labels_ptr      = nullptr;
+  uint32_t* index_list_sorted  = nullptr;
+  uint32_t* cluster_labels_ptr =               // NOLINT
+    const_cast<uint32_t*>(clusters_to_probe);  // we won't be writing here, I promise
   uint32_t* cluster_labels_host_ptr = nullptr;
 
-  std::vector<uint32_t> cluster_labels_host_buf(0);
+  std::vector<uint32_t> cluster_labels_host_buf(prefetch ? n_queries * n_probes : 0);
   rmm::device_uvector<uint32_t> cluster_labels_buf(0, stream, mr);
   rmm::device_uvector<uint32_t> index_list_sorted_buf(0, stream, mr);
   rmm::device_uvector<uint32_t> num_samples(n_queries, stream, mr);
@@ -484,14 +489,12 @@ void ivfpq_search_worker(raft::resources const& handle,
     // possible.
     index_list_sorted_buf.resize(n_queries * n_probes, stream);
     cluster_labels_buf.resize(n_queries * n_probes, stream);
-    cluster_labels_host_buf.resize(n_queries * n_probes);
     auto index_list_buf =
       make_device_mdarray<uint32_t>(handle, mr, make_extents<uint32_t>(n_queries * n_probes));
     auto index_list = index_list_buf.data_handle();
 
-    index_list_sorted       = index_list_sorted_buf.data();
-    cluster_labels_ptr      = cluster_labels_buf.data();
-    cluster_labels_host_ptr = cluster_labels_host_buf.data();
+    index_list_sorted  = index_list_sorted_buf.data();
+    cluster_labels_ptr = cluster_labels_buf.data();
 
     linalg::map_offset(handle, index_list_buf.view(), identity_op{});
 
@@ -519,7 +522,14 @@ void ivfpq_search_worker(raft::resources const& handle,
                                     begin_bit,
                                     end_bit,
                                     stream);
+  }
+
+  if (prefetch) {
+    cluster_labels_host_ptr = cluster_labels_host_buf.data();
     raft::copy(cluster_labels_host_ptr, cluster_labels_ptr, cluster_labels_buf.size(), stream);
+    // signal to the prefetchers that the data is already copied to the host.
+    // NB: carefully reusing an event from detail namespace
+    RAFT_CUDA_TRY(cudaEventRecord(resource::detail::get_cuda_stream_sync_event(handle), stream));
   }
 
   // select and run the main search kernel
@@ -564,8 +574,8 @@ void ivfpq_search_worker(raft::resources const& handle,
                 raft::const_op<float>{dummy_block_sort_t<ScoreT, IdxT>::queue_t::kDummy});
     query_kths = query_kths_buf->data_handle();
   }
-  compute_similarity_run(search_instance,
-                         stream,
+  compute_similarity_run(handle,
+                         search_instance,
                          index.size(),
                          index.rot_dim(),
                          n_probes,
@@ -579,7 +589,7 @@ void ivfpq_search_worker(raft::resources const& handle,
                          index.centers_rot().data_handle(),
                          index.pq_centers().data_handle(),
                          index.data_ptrs().data_handle(),
-                         cluster_labels_ptr != nullptr ? cluster_labels_ptr : clusters_to_probe,
+                         cluster_labels_ptr,
                          chunk_index.data(),
                          query,
                          index_list_sorted,

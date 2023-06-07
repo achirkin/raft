@@ -25,7 +25,6 @@
 #include <raft/util/device_atomics.cuh>                       // raft::atomicMin
 #include <raft/util/pow2_utils.cuh>                           // raft::Pow2
 #include <raft/util/vectorized.cuh>                           // raft::TxN_t
-#include <rmm/cuda_stream_pool.hpp>                           // rmm::cuda_stream_view
 #include <rmm/cuda_stream_view.hpp>                           // rmm::cuda_stream_view
 
 #include <omp.h>
@@ -279,7 +278,6 @@ __global__ void compute_similarity_kernel(uint32_t n_rows,
                                           uint32_t ib_offset,
                                           uint32_t ib_limit)
 {
-  // __shared__ uint8_t dummy_result[16];
   /* Shared memory:
 
     * lut_scores: lookup table (LUT) of size = `pq_dim << PqBits`  (when EnableSMemLut)
@@ -318,7 +316,6 @@ __global__ void compute_similarity_kernel(uint32_t n_rows,
     }
     uint32_t query_ix;
     uint32_t probe_ix;
-
     if (index_list == nullptr) {
       query_ix = ib % n_queries;
       probe_ix = ib / n_queries;
@@ -327,7 +324,6 @@ __global__ void compute_similarity_kernel(uint32_t n_rows,
       query_ix        = ordered_ix / n_probes;
       probe_ix        = ordered_ix % n_probes;
     }
-    const uint32_t label = cluster_labels[ib];
 
     const uint32_t* chunk_indices = _chunk_indices + (n_probes * query_ix);
     const float* query            = queries + (dim * query_ix);
@@ -341,6 +337,7 @@ __global__ void compute_similarity_kernel(uint32_t n_rows,
       // Store all calculated distances to out_scores
       out_scores = _out_scores + max_samples * query_ix;
     }
+    const uint32_t label        = cluster_labels[ib];
     const float* cluster_center = cluster_centers + (dim * label);
     const float* pq_center;
     if (codebook_kind == codebook_gen::PER_SUBSPACE) {

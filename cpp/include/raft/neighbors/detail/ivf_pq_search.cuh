@@ -443,13 +443,13 @@ void ivfpq_search_worker(raft::resources const& handle,
       "Non-fused version of the search kernel is selected (manage_local_topk == false)");
   }
 
+  uint32_t* index_list_sorted       = nullptr;
   uint32_t* cluster_labels_ptr      = nullptr;
   uint32_t* cluster_labels_host_ptr = nullptr;
 
-  std::vector<uint32_t> cluster_labels_host(0);
-  rmm::device_uvector<uint32_t> cluster_labels_out(0, stream, mr);
+  std::vector<uint32_t> cluster_labels_host_buf(0);
+  rmm::device_uvector<uint32_t> cluster_labels_buf(0, stream, mr);
   rmm::device_uvector<uint32_t> index_list_sorted_buf(0, stream, mr);
-  uint32_t* index_list_sorted = nullptr;
   rmm::device_uvector<uint32_t> num_samples(n_queries, stream, mr);
   rmm::device_uvector<uint32_t> chunk_index(n_queries * n_probes, stream, mr);
   // [maxBatchSize, max_samples] or  [maxBatchSize, n_probes, topk]
@@ -483,14 +483,15 @@ void ivfpq_search_worker(raft::resources const& handle,
     // of a cluster by processing the cluster at the same time as much as
     // possible.
     index_list_sorted_buf.resize(n_queries * n_probes, stream);
-    cluster_labels_out.resize(n_queries * n_probes, stream);
-    cluster_labels_host.resize(n_queries * n_probes);
-    cluster_labels_ptr      = cluster_labels_out.data();
-    cluster_labels_host_ptr = cluster_labels_host.data();
+    cluster_labels_buf.resize(n_queries * n_probes, stream);
+    cluster_labels_host_buf.resize(n_queries * n_probes);
     auto index_list_buf =
       make_device_mdarray<uint32_t>(handle, mr, make_extents<uint32_t>(n_queries * n_probes));
-    auto index_list   = index_list_buf.data_handle();
-    index_list_sorted = index_list_sorted_buf.data();
+    auto index_list = index_list_buf.data_handle();
+
+    index_list_sorted       = index_list_sorted_buf.data();
+    cluster_labels_ptr      = cluster_labels_buf.data();
+    cluster_labels_host_ptr = cluster_labels_host_buf.data();
 
     linalg::map_offset(handle, index_list_buf.view(), identity_op{});
 
@@ -518,7 +519,7 @@ void ivfpq_search_worker(raft::resources const& handle,
                                     begin_bit,
                                     end_bit,
                                     stream);
-    raft::copy(cluster_labels_host_ptr, cluster_labels_ptr, cluster_labels_out.size(), stream);
+    raft::copy(cluster_labels_host_ptr, cluster_labels_ptr, cluster_labels_buf.size(), stream);
   }
 
   // select and run the main search kernel

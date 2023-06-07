@@ -309,21 +309,15 @@ __global__ void compute_similarity_kernel(uint32_t n_rows,
     }
   }
 
-  for (int ib = blockIdx.x + ib_offset; ib < ib_limit; ib += gridDim.x) {
+  for (uint32_t ib = blockIdx.x + ib_offset; ib < ib_limit; ib += gridDim.x) {
     if (ib >= ib_offset + gridDim.x) {
       // sync shared memory accesses on the second and further iterations
       __syncthreads();
     }
-    uint32_t query_ix;
-    uint32_t probe_ix;
-    if (index_list == nullptr) {
-      query_ix = ib % n_queries;
-      probe_ix = ib / n_queries;
-    } else {
-      auto ordered_ix = index_list[ib];
-      query_ix        = ordered_ix / n_probes;
-      probe_ix        = ordered_ix % n_probes;
-    }
+    const uint32_t ordered_ix = index_list != nullptr ? index_list[ib] : ib;
+    const uint32_t query_ix   = ordered_ix / n_probes;
+    const uint32_t probe_ix   = ordered_ix % n_probes;
+    const uint32_t label      = cluster_labels[ib];
 
     const uint32_t* chunk_indices = _chunk_indices + (n_probes * query_ix);
     const float* query            = queries + (dim * query_ix);
@@ -331,13 +325,12 @@ __global__ void compute_similarity_kernel(uint32_t n_rows,
     uint32_t* out_indices = nullptr;
     if constexpr (kManageLocalTopK) {
       // Store topk calculated distances to out_scores (and its indices to out_indices)
-      out_scores  = _out_scores + topk * (probe_ix + (n_probes * query_ix));
-      out_indices = _out_indices + topk * (probe_ix + (n_probes * query_ix));
+      out_scores  = _out_scores + topk * ordered_ix;
+      out_indices = _out_indices + topk * ordered_ix;
     } else {
       // Store all calculated distances to out_scores
       out_scores = _out_scores + max_samples * query_ix;
     }
-    const uint32_t label        = cluster_labels[ib];
     const float* cluster_center = cluster_centers + (dim * label);
     const float* pq_center;
     if (codebook_kind == codebook_gen::PER_SUBSPACE) {

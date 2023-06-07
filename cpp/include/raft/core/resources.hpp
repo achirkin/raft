@@ -95,6 +95,9 @@ class resources {
     RAFT_EXPECTS(rtype != resource::resource_type::LAST_KEY,
                  "LAST_KEY is a placeholder and not a valid resource factory type.");
     factories_.at(rtype) = std::make_pair(rtype, factory);
+    // invalidate the resource to allow factory do its thing
+    resources_.at(rtype) = std::make_pair(resource::resource_type::LAST_KEY,
+                                          std::make_shared<resource::empty_resource>());
   }
 
   /**

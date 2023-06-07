@@ -25,6 +25,7 @@
 #include <raft/core/host_mdspan.hpp>
 #include <raft/core/logger.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/cuda_stream_pool.hpp>
 #include <raft/distance/distance_types.hpp>
 #include <raft/linalg/unary_op.cuh>
 #include <raft/neighbors/ivf_pq_types.hpp>
@@ -33,10 +34,10 @@
 #include <raft_runtime/neighbors/ivf_pq.hpp>
 #include <raft_runtime/neighbors/refine.hpp>
 
+#include <rmm/cuda_stream_pool.hpp>
 #include <rmm/device_uvector.hpp>
-#include <rmm/mr/device/device_memory_resource.hpp>
-#include <rmm/mr/device/pool_memory_resource.hpp>
 
+#include <memory>
 #include <type_traits>
 
 namespace raft::bench::ann {
@@ -53,7 +54,11 @@ class RaftIvfPQ : public ANN<T> {
 
   using BuildParam = raft::neighbors::ivf_pq::index_params;
 
-  RaftIvfPQ(Metric metric, int dim, const BuildParam& param, float refine_ratio);
+  RaftIvfPQ(Metric metric,
+            int dim,
+            const BuildParam& param,
+            float refine_ratio,
+            size_t stream_pool_size = 0);
 
   void build(const T* dataset, size_t nrow, cudaStream_t stream) final;
 
@@ -88,22 +93,20 @@ class RaftIvfPQ : public ANN<T> {
   BuildParam index_params_;
   raft::neighbors::ivf_pq::search_params search_params_;
   std::optional<raft::neighbors::ivf_pq::index<IdxT>> index_;
-  int device_;
   int dimension_;
   float refine_ratio_ = 1.0;
-  rmm::mr::pool_memory_resource<rmm::mr::device_memory_resource> mr_;
   raft::device_matrix_view<const T, IdxT> dataset_;
 };
 template <typename T, typename IdxT>
-RaftIvfPQ<T, IdxT>::RaftIvfPQ(Metric metric, int dim, const BuildParam& param, float refine_ratio)
-  : ANN<T>(metric, dim),
-    index_params_(param),
-    dimension_(dim),
-    refine_ratio_(refine_ratio),
-    mr_(rmm::mr::get_current_device_resource(), 1024 * 1024 * 1024ull)
+RaftIvfPQ<T, IdxT>::RaftIvfPQ(
+  Metric metric, int dim, const BuildParam& param, float refine_ratio, size_t stream_pool_size)
+  : ANN<T>(metric, dim), index_params_(param), dimension_(dim), refine_ratio_(refine_ratio)
 {
+  if (stream_pool_size > 0) {
+    resource::set_cuda_stream_pool(handle_,
+                                   std::make_shared<rmm::cuda_stream_pool>(stream_pool_size));
+  }
   index_params_.metric = parse_metric_type(metric);
-  RAFT_CUDA_TRY(cudaGetDevice(&device_));
 }
 
 template <typename T, typename IdxT>
@@ -122,8 +125,9 @@ void RaftIvfPQ<T, IdxT>::load(const std::string& file)
 }
 
 template <typename T, typename IdxT>
-void RaftIvfPQ<T, IdxT>::build(const T* dataset, size_t nrow, cudaStream_t)
+void RaftIvfPQ<T, IdxT>::build(const T* dataset, size_t nrow, cudaStream_t stream)
 {
+  resource::set_cuda_stream(handle_, stream);
   auto dataset_v = raft::make_device_matrix_view<const T, IdxT>(dataset, IdxT(nrow), dim_);
 
   index_.emplace(raft::runtime::neighbors::ivf_pq::build(handle_, index_params_, dataset_v));
@@ -152,6 +156,7 @@ void RaftIvfPQ<T, IdxT>::search(const T* queries,
                                 float* distances,
                                 cudaStream_t stream) const
 {
+  resource::set_cuda_stream(handle_, stream);
   if (refine_ratio_ > 1.0f) {
     uint32_t k0 = static_cast<uint32_t>(refine_ratio_ * k);
     auto queries_v =
@@ -219,13 +224,13 @@ void RaftIvfPQ<T, IdxT>::search(const T* queries,
     raft::runtime::neighbors::ivf_pq::search(
       handle_, search_params_, *index_, queries_v, neighbors_v, distances_v);
   }
-  resource::sync_stream(handle_);
   return;
 }
 
 template <typename T, typename IdxT>
 void RaftIvfPQ<T, IdxT>::simulate_use(cudaStream_t stream) const
 {
+  resource::set_cuda_stream(handle_, stream);
   /*
     The goal of this function is to probe a certain number of cluster randomly.
     Assuming the cluster data is in managed memory, this should mimic the real-world state of the
@@ -250,9 +255,8 @@ void RaftIvfPQ<T, IdxT>::simulate_use(cudaStream_t stream) const
                 num_queries,
                 search_params_.n_probes);
   int k = 1;
-  raft::device_resources res;
   rmm::device_uvector<uint32_t> cluster_ids(num_queries, stream);
-  auto queries = raft::make_device_matrix<float, uint32_t>(res, num_queries, index.dim());
+  auto queries = raft::make_device_matrix<float, uint32_t>(handle_, num_queries, index.dim());
   rng_.uniformInt<uint32_t>(cluster_ids.data(), num_queries, 0, index.n_lists(), stream);
   RAFT_CUDA_TRY(cudaMemcpy2DAsync(queries.data_handle(),
                                   sizeof(float) * index.dim(),
@@ -262,10 +266,10 @@ void RaftIvfPQ<T, IdxT>::simulate_use(cudaStream_t stream) const
                                   num_queries,
                                   cudaMemcpyDefault,
                                   stream));
-  auto neighbors = raft::make_device_matrix<IdxT, uint32_t>(res, num_queries, k);
-  auto distances = raft::make_device_matrix<float, uint32_t>(res, num_queries, k);
+  auto neighbors = raft::make_device_matrix<IdxT, uint32_t>(handle_, num_queries, k);
+  auto distances = raft::make_device_matrix<float, uint32_t>(handle_, num_queries, k);
   runtime::neighbors::ivf_pq::search(
-    res, search_params_, index, queries.view(), neighbors.view(), distances.view());
+    handle_, search_params_, index, queries.view(), neighbors.view(), distances.view());
 }
 
 }  // namespace raft::bench::ann

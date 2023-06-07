@@ -278,7 +278,7 @@ inline void search(const Dataset<T>* dataset, const std::vector<Configuration::I
 {
   if (indices.empty()) { return; }
   cudaStream_t stream;
-  RAFT_CUDA_TRY(cudaStreamCreate(&stream));
+  RAFT_CUDA_TRY(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking));
 
   log_info("loading query set from dataset '%s', #vector = %zu",
            dataset->name().c_str(),

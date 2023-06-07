@@ -173,8 +173,10 @@ std::unique_ptr<raft::bench::ann::ANN<T>> create_algo(const std::string& algo,
   if (algo == "raft_ivf_pq") {
     typename raft::bench::ann::RaftIvfPQ<T, int64_t>::BuildParam param;
     parse_build_param<T, int64_t>(conf, param);
-    ann =
-      std::make_unique<raft::bench::ann::RaftIvfPQ<T, int64_t>>(metric, dim, param, refine_ratio);
+    size_t stream_pool_size = 0;
+    if (conf.contains("stream_pool_size")) { stream_pool_size = conf.at("stream_pool_size"); }
+    ann = std::make_unique<raft::bench::ann::RaftIvfPQ<T, int64_t>>(
+      metric, dim, param, refine_ratio, stream_pool_size);
   }
 #endif
   if (!ann) { throw std::runtime_error("invalid algo: '" + algo + "'"); }

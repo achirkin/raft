@@ -289,10 +289,8 @@ Dataset<T>::~Dataset()
 {
   delete[] base_set_;
   delete[] query_set_;
-  cudaGetLastError();
-  if (d_base_set_) { RAFT_CUDA_TRY_NO_THROW(cudaFree(d_base_set_)); }
-  if (d_query_set_) { RAFT_CUDA_TRY_NO_THROW(cudaFree(d_query_set_)); }
-  cudaGetLastError();
+  if (d_base_set_) { cudaFree(d_base_set_); }
+  if (d_query_set_) { cudaFree(d_query_set_); }
 }
 
 template <typename T>

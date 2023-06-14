@@ -31,6 +31,7 @@
 #include <raft/util/integer_utils.hpp>
 
 #include <rmm/mr/device/managed_memory_resource.hpp>
+#include <rmm/mr/device/pool_memory_resource.hpp>
 #include <thrust/fill.h>
 
 #include <fstream>
@@ -54,8 +55,12 @@ list<SpecT, SizeT, SpecExtraArgs...>::list(raft::resources const& res,
     capacity = std::min<SizeT>(capacity, spec.align_max);
   }
   try {
-    static thread_local std::shared_ptr<rmm::mr::managed_memory_resource> managed_mr(
+    static thread_local std::shared_ptr<rmm::mr::managed_memory_resource> managed_mr_upstream(
       new rmm::mr::managed_memory_resource());
+    static thread_local std::shared_ptr<
+      rmm::mr::pool_memory_resource<rmm::mr::managed_memory_resource>>
+      managed_mr(new rmm::mr::pool_memory_resource(managed_mr_upstream.get(),
+                                                   10ull * 1024ull * 1024ull * 1024ull));
     auto mr = managed_mr.get();
     raft::device_resources res2(resource::get_cuda_stream(res), nullptr, mr);
     data           = make_device_mdarray<value_type>(res2, spec.make_list_extents(capacity));

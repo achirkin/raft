@@ -81,7 +81,8 @@ header = """
         uint32_t* _out_indices,                                         \\
         const uint8_t* const* host_data_ptrs,                           \\
         const size_t* host_list_bytesizes,                              \\
-        const uint32_t* host_cluster_labels);
+        const uint32_t* host_cluster_labels,                            \\
+        uint32_t coresidency);
 
 
 #define COMMA ,

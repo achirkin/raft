@@ -600,7 +600,8 @@ void ivfpq_search_worker(raft::resources const& handle,
                          neighbors_ptr,
                          index.host_data_ptrs().data_handle(),
                          index.host_list_bytesizes().data_handle(),
-                         cluster_labels_host_ptr);
+                         cluster_labels_host_ptr,
+                         coresidency);
 
   // Select topk vectors for each query
   rmm::device_uvector<ScoreT> topk_dists(n_queries * topK, stream, mr);

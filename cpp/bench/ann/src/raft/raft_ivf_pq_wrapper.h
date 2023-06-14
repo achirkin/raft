@@ -239,6 +239,9 @@ void RaftIvfPQ<T, IdxT>::simulate_use(cudaStream_t stream) const
     oversubscription ratio.
   */
   if (!index_.has_value()) { return; }
+
+  auto sp     = search_params_;
+  sp.n_probes = 100;  // fix n_probes to avoid too many queries per batch and limit the workspace
   auto& index = index_.value();
   size_t free_mem, total_mem;
   RAFT_CUDA_TRY(cudaMemGetInfo(&free_mem, &total_mem));
@@ -250,10 +253,9 @@ void RaftIvfPQ<T, IdxT>::simulate_use(cudaStream_t stream) const
       .size();
   size_t total_probes = div_rounding_up_safe(total_mem, avg_mem_per_cluster);
   // set the number of queries to cover the whole GPU mem two times.
-  size_t num_queries = 2 * div_rounding_up_safe<size_t>(total_probes, search_params_.n_probes);
-  RAFT_LOG_INFO("Simulating index use (n_queries = %u, n_probes = %u)...",
-                num_queries,
-                search_params_.n_probes);
+  size_t num_queries = 2 * div_rounding_up_safe<size_t>(total_probes, sp.n_probes);
+  RAFT_LOG_INFO(
+    "Simulating index use (n_queries = %u, n_probes = %u)...", num_queries, sp.n_probes);
   int k = 1;
   rmm::device_uvector<uint32_t> cluster_ids(num_queries, stream);
   auto queries = raft::make_device_matrix<float, uint32_t>(handle_, num_queries, index.dim());
@@ -269,7 +271,7 @@ void RaftIvfPQ<T, IdxT>::simulate_use(cudaStream_t stream) const
   auto neighbors = raft::make_device_matrix<IdxT, uint32_t>(handle_, num_queries, k);
   auto distances = raft::make_device_matrix<float, uint32_t>(handle_, num_queries, k);
   runtime::neighbors::ivf_pq::search(
-    handle_, search_params_, index, queries.view(), neighbors.view(), distances.view());
+    handle_, sp, index, queries.view(), neighbors.view(), distances.view());
 }
 
 }  // namespace raft::bench::ann

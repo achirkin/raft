@@ -631,109 +631,116 @@ void compute_similarity_run(const resources& res,
   const uint32_t work_size      = n_queries * n_probes;
   const uint32_t max_batch_size = prefetch ? s.wave_length * std::max<uint32_t>(5, coresidency / 5)
                                            : std::numeric_limits<uint32_t>::max();
-  const int cur_dev             = prefetch ? resource::get_device_id(res) : -1;
+  const uint32_t prefetch_skip  = std::min(max_batch_size, work_size);
   const int num_prefetchers     = prefetch ? resource::get_stream_pool_size(res) : 0;
   constexpr size_t kMaxPrefetchSize = 100ull * 1024ull * 1024ull;
   cudaEvent_t process_event         = nullptr;
-  cudaEvent_t prefetch_event        = nullptr;
-  if (prefetch) {
-    process_event = resource::detail::get_cuda_stream_sync_event(res);
-    RAFT_CUDA_TRY(cudaEventCreateWithFlags(&prefetch_event, cudaEventDisableTiming));
+  if (prefetch) { process_event = resource::detail::get_cuda_stream_sync_event(res); }
+  std::atomic<uint32_t> submitted_work(0);
+  std::atomic<uint32_t> prefetched_work(prefetch_skip);
+  for (int i = 0; i < num_prefetchers; i++) {
+    // make the prefetcher threads synchronize on their streams  to wait till the
+    // host_cluster_labels loads onto the host
+    RAFT_CUDA_TRY(
+      cudaStreamWaitEvent(resource::get_stream_from_stream_pool(res, i), process_event));
   }
 #pragma omp parallel num_threads(num_prefetchers + 1)
   {
-    int cur_thread          = omp_get_thread_num();
-    uint32_t prev_label     = std::numeric_limits<uint32_t>::max();
-    const uint8_t* prev_ptr = nullptr;
-    size_t prev_size        = 0;
-    int cur_prefetcher      = 0;
-    cudaStream_t cur_stream;
+    int cur_thread = omp_get_thread_num();
     if (cur_thread == 0) {
-      cur_stream = resource::get_cuda_stream(res);
+      auto stream = resource::get_cuda_stream(res);
+      for (uint32_t i_offset = 0; i_offset < work_size; i_offset += max_batch_size) {
+        const auto i_limit = std::min(i_offset + max_batch_size, work_size);
+        dim3 gs            = s.grid_dim;
+        gs.x               = std::min(gs.x, i_limit - i_offset);
+        if (prefetch) {
+          while (prefetched_work.load() < i_limit) {}
+        }
+        s.kernel<<<gs, s.block_dim, s.smem_size, stream>>>(n_rows,
+                                                           dim,
+                                                           n_probes,
+                                                           pq_dim,
+                                                           n_queries,
+                                                           queries_offset,
+                                                           metric,
+                                                           codebook_kind,
+                                                           topk,
+                                                           max_samples,
+                                                           cluster_centers,
+                                                           pq_centers,
+                                                           pq_dataset,
+                                                           cluster_labels,
+                                                           _chunk_indices,
+                                                           queries,
+                                                           index_list,
+                                                           query_kths,
+                                                           sample_filter,
+                                                           lut_scores,
+                                                           _out_scores,
+                                                           _out_indices,
+                                                           i_offset,
+                                                           i_limit);
+        if (prefetch) {
+          RAFT_CUDA_TRY(cudaEventRecord(process_event, stream));
+          submitted_work.store(i_limit);
+        }
+      }
     } else {
-      cur_stream = resource::get_stream_from_stream_pool(res, cur_thread - 1);
+      auto stream              = resource::get_stream_from_stream_pool(res, cur_thread - 1);
+      const auto cur_dev       = resource::get_device_id(res);
+      uint32_t prev_label      = std::numeric_limits<uint32_t>::max();
+      uint32_t i_start         = prefetch_skip;
+      uint32_t i               = prefetch_skip;
+      size_t cur_size          = 0;
+      const uint8_t* start_ptr = nullptr;
+      int cur_prefetcher       = 0;
       // wait for the cluster labels to be passed from device to host - only in prefetch threads.
-      RAFT_CUDA_TRY_NO_THROW(cudaEventSynchronize(process_event));
-    }
-
-    for (uint32_t ib_offset = 0; ib_offset < work_size; ib_offset += max_batch_size) {
-      bool busy_round     = false;
-      const auto ib_limit = std::min(ib_offset + max_batch_size, work_size);
-      if (cur_thread == 0) {
-        dim3 gs = s.grid_dim;
-        gs.x    = std::min(gs.x, ib_limit - ib_offset);
-        s.kernel<<<gs, s.block_dim, s.smem_size, cur_stream>>>(n_rows,
-                                                               dim,
-                                                               n_probes,
-                                                               pq_dim,
-                                                               n_queries,
-                                                               queries_offset,
-                                                               metric,
-                                                               codebook_kind,
-                                                               topk,
-                                                               max_samples,
-                                                               cluster_centers,
-                                                               pq_centers,
-                                                               pq_dataset,
-                                                               cluster_labels,
-                                                               _chunk_indices,
-                                                               queries,
-                                                               index_list,
-                                                               query_kths,
-                                                               sample_filter,
-                                                               lut_scores,
-                                                               _out_scores,
-                                                               _out_indices,
-                                                               ib_offset,
-                                                               ib_limit);
-        if (prefetch) { RAFT_CUDA_TRY(cudaEventRecord(process_event, cur_stream)); }
-      } else {
-        const auto ib_limit_shifted = std::min(ib_limit + max_batch_size, work_size);
-        for (auto ib = ib_limit; ib < ib_limit_shifted; ib++) {
-          auto label = host_cluster_labels[ib];
-          if (label != prev_label) {
-            auto ptr  = host_data_ptrs[label];
-            auto size = host_list_bytesizes[label];
-            if (ptr > prev_ptr && size > 0 && (ptr - prev_ptr) * 4ull >= prev_size * 3ull) {
-              auto next_label = host_cluster_labels[std::min(ib + max_batch_size, work_size) - 1];
-              auto next_ptr   = host_data_ptrs[next_label];
-              if (next_ptr > ptr + size) {
-                auto next_cluster_size = host_list_bytesizes[next_label];
-                size                   = std::max(
-                  size, std::min(kMaxPrefetchSize, next_cluster_size + size_t(next_ptr - ptr)));
-                auto tmp_ptr = ptr;
-                ptr          = std::max(tmp_ptr, Pow2<256ull>::roundDown(prev_ptr + prev_size));
-                size -= (ptr - tmp_ptr);
-              }
-              if (size > 0) {
-                prev_ptr  = ptr;
-                prev_size = size;
-                if ((++cur_prefetcher) == cur_thread) {
-                  RAFT_CUDA_TRY(cudaMemPrefetchAsync(ptr, size, cur_dev, cur_stream));
-                  busy_round = true;
-                }
-                if (cur_prefetcher >= num_prefetchers) { cur_prefetcher = 0; }
-              }
-            }
-            prev_label = label;
+      resource::sync_stream(res, stream);
+      while (i < work_size) {
+        auto i_end         = i + 1;
+        const auto label   = host_cluster_labels[i];
+        const auto i_limit = std::min(i_start + max_batch_size, work_size);
+        if (label != prev_label) {
+          // skip repeating labels
+          auto ptr  = host_data_ptrs[label];
+          auto size = host_list_bytesizes[label];
+          if (ptr == nullptr || size == 0) {
+            // ignore empty clusters
+          } else if (start_ptr == nullptr || cur_size == 0) {
+            // start the prefetching area
+            start_ptr = ptr;
+            cur_size  = size;
+          } else if (ptr >= start_ptr && ptr + size <= start_ptr + kMaxPrefetchSize) {
+            // grow existing area
+            cur_size = std::max(cur_size, size + size_t(ptr - start_ptr));
+          } else {
+            // force prefetch now and repeat the iteration
+            i_end = i;
           }
         }
-        if (busy_round) { RAFT_CUDA_TRY(cudaEventRecord(prefetch_event, cur_stream)); }
-      }
-#pragma omp barrier
-      if (cur_thread == 0) {
-        if (prefetch) { RAFT_CUDA_TRY(cudaStreamWaitEvent(cur_stream, prefetch_event)); }
-      } else {
-        if (busy_round) {
-          // with this conditional a prefetching stream can go a few rounds ahead of the main
-          // stream; we hope we've got enough GPU mem for this much prefetched data.
-          // NB: the omp threads stay in sync
-          RAFT_CUDA_TRY(cudaStreamWaitEvent(cur_stream, process_event));
+        if (i_end != i) { prev_label = label; }
+
+        if (cur_size >= kMaxPrefetchSize || i_end >= i_limit || i_end == i) {
+          if ((++cur_prefetcher) == cur_thread) {
+            while (prefetched_work.load() < i_start) {}
+            if (cur_size > 0) {
+              while (submitted_work.load() + 3 * max_batch_size < i_start) {}
+              RAFT_CUDA_TRY(cudaStreamWaitEvent(stream, process_event));
+              RAFT_CUDA_TRY(cudaMemPrefetchAsync(start_ptr, cur_size, cur_dev, stream));
+            }
+            prefetched_work.store(i_end);
+          }
+          if (cur_prefetcher >= num_prefetchers) { cur_prefetcher = 0; }
+          cur_size  = 0;
+          start_ptr = nullptr;
+          i_start   = i_end;
+          i         = i_end;
+        } else {
+          i++;
         }
       }
     }
   }
-  if (prefetch) { RAFT_CUDA_TRY(cudaEventDestroy(prefetch_event)); }
 }
 
 /**

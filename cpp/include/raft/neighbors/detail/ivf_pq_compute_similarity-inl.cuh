@@ -718,7 +718,8 @@ void compute_similarity_run(const resources& res,
             // start the prefetching area
             start_ptr = ptr;
             cur_size  = size;
-          } else if (ptr >= start_ptr && ptr + size <= start_ptr + kMaxPrefetchByteSize) {
+          } else if (ptr >= start_ptr && ptr + size <= start_ptr + kMaxPrefetchByteSize &&
+                     ptr <= start_ptr + cur_size + size * 10) {
             // grow existing area
             cur_size = std::max(cur_size, size + size_t(ptr - start_ptr));
           } else {

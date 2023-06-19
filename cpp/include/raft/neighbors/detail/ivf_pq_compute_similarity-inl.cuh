@@ -631,13 +631,14 @@ void compute_similarity_run(const resources& res,
   const uint32_t work_size      = n_queries * n_probes;
   const uint32_t max_batch_size = prefetch ? s.wave_length * std::max<uint32_t>(5, coresidency / 5)
                                            : std::numeric_limits<uint32_t>::max();
-  const uint32_t prefetch_skip  = std::min(max_batch_size, work_size);
+  const uint32_t prefetch_skip  = std::min(s.wave_length * 3, work_size);
   const int num_prefetchers     = prefetch ? resource::get_stream_pool_size(res) : 0;
-  constexpr size_t kMaxPrefetchSize = 100ull * 1024ull * 1024ull;
-  cudaEvent_t process_event         = nullptr;
+  constexpr size_t kMaxPrefetchByteSize = 300ull * 1024ull * 1024ull;
+  cudaEvent_t process_event             = nullptr;
   if (prefetch) { process_event = resource::detail::get_cuda_stream_sync_event(res); }
   std::atomic<uint32_t> submitted_work(0);
   std::atomic<uint32_t> prefetched_work(prefetch_skip);
+  std::atomic<uint32_t> prefetch_offset(0);
   for (int i = 0; i < num_prefetchers; i++) {
     // make the prefetcher threads synchronize on their streams  to wait till the
     // host_cluster_labels loads onto the host
@@ -648,13 +649,15 @@ void compute_similarity_run(const resources& res,
   {
     int cur_thread = omp_get_thread_num();
     if (cur_thread == 0) {
-      auto stream = resource::get_cuda_stream(res);
+      auto stream                    = resource::get_cuda_stream(res);
+      uint32_t prefetch_offset_local = 0;
       for (uint32_t i_offset = 0; i_offset < work_size; i_offset += max_batch_size) {
         const auto i_limit = std::min(i_offset + max_batch_size, work_size);
         dim3 gs            = s.grid_dim;
         gs.x               = std::min(gs.x, i_limit - i_offset);
         if (prefetch) {
-          while (prefetched_work.load() < i_limit) {}
+          while (prefetched_work.load() <
+                 std::min(i_offset + prefetch_skip + prefetch_offset_local, work_size)) {}
         }
         s.kernel<<<gs, s.block_dim, s.smem_size, stream>>>(n_rows,
                                                            dim,
@@ -681,25 +684,30 @@ void compute_similarity_run(const resources& res,
                                                            i_offset,
                                                            i_limit);
         if (prefetch) {
+          prefetch_offset_local =
+            cudaEventQuery(process_event) == cudaSuccess ? 0 : prefetch_offset.load();
           RAFT_CUDA_TRY(cudaEventRecord(process_event, stream));
           submitted_work.store(i_limit);
         }
       }
     } else {
-      auto stream              = resource::get_stream_from_stream_pool(res, cur_thread - 1);
-      const auto cur_dev       = resource::get_device_id(res);
-      uint32_t prev_label      = std::numeric_limits<uint32_t>::max();
-      uint32_t i_start         = prefetch_skip;
-      uint32_t i               = prefetch_skip;
-      size_t cur_size          = 0;
-      const uint8_t* start_ptr = nullptr;
-      int cur_prefetcher       = 0;
+      const uint32_t max_prefetch_size = max_batch_size * 2;
+      uint32_t max_prefetch_offset     = 0;
+      double avg_bytes_per_probe       = kMaxPrefetchByteSize / max_prefetch_size;
+      auto stream                      = resource::get_stream_from_stream_pool(res, cur_thread - 1);
+      const auto cur_dev               = resource::get_device_id(res);
+      uint32_t prev_label              = std::numeric_limits<uint32_t>::max();
+      uint32_t i_start                 = prefetch_skip;
+      uint32_t i                       = prefetch_skip;
+      size_t cur_size                  = 0;
+      const uint8_t* start_ptr         = nullptr;
+      int cur_prefetcher               = 0;
       // wait for the cluster labels to be passed from device to host - only in prefetch threads.
       resource::sync_stream(res, stream);
       while (i < work_size) {
         auto i_end         = i + 1;
         const auto label   = host_cluster_labels[i];
-        const auto i_limit = std::min(i_start + max_batch_size, work_size);
+        const auto i_limit = std::min(i_start + max_prefetch_size, work_size);
         if (label != prev_label) {
           // skip repeating labels
           auto ptr  = host_data_ptrs[label];
@@ -710,7 +718,7 @@ void compute_similarity_run(const resources& res,
             // start the prefetching area
             start_ptr = ptr;
             cur_size  = size;
-          } else if (ptr >= start_ptr && ptr + size <= start_ptr + kMaxPrefetchSize) {
+          } else if (ptr >= start_ptr && ptr + size <= start_ptr + kMaxPrefetchByteSize) {
             // grow existing area
             cur_size = std::max(cur_size, size + size_t(ptr - start_ptr));
           } else {
@@ -720,13 +728,22 @@ void compute_similarity_run(const resources& res,
         }
         if (i_end != i) { prev_label = label; }
 
-        if (cur_size >= kMaxPrefetchSize || i_end >= i_limit || i_end == i) {
+        if (cur_size >= kMaxPrefetchByteSize || i_end >= i_limit || i_end == i) {
+          // Recalculate the average prefetch size (needed for calculating the prefetch window)
+          constexpr size_t kMvAvgRatio = 10;
+          avg_bytes_per_probe +=
+            (double(cur_size) / double(i_end - i_start) - avg_bytes_per_probe) / kMvAvgRatio;
+          auto prefetch_offset_local = uint32_t(kMaxPrefetchByteSize / avg_bytes_per_probe);
+          max_prefetch_offset =
+            std::max(max_prefetch_offset, prefetch_offset_local + max_batch_size);
+          // Round-robin submit the prefetch work
           if ((++cur_prefetcher) == cur_thread) {
             while (prefetched_work.load() < i_start) {}
             if (cur_size > 0) {
-              while (submitted_work.load() + 3 * max_batch_size < i_start) {}
+              while (submitted_work.load() + max_prefetch_offset < i_start) {}
               RAFT_CUDA_TRY(cudaStreamWaitEvent(stream, process_event));
               RAFT_CUDA_TRY(cudaMemPrefetchAsync(start_ptr, cur_size, cur_dev, stream));
+              prefetch_offset.store(prefetch_offset_local);
             }
             prefetched_work.store(i_end);
           }

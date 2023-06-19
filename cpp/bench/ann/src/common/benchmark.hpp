@@ -368,13 +368,13 @@ inline void search(const Dataset<T>* dataset, const std::vector<Configuration::I
       float best_search_time_p99     = std::numeric_limits<float>::max();
       float best_search_time_p999    = std::numeric_limits<float>::max();
       for (int run = 0; run < run_count; ++run) {
+        RAFT_CUDA_TRY(cudaDeviceSynchronize());
+        algo->simulate_use(stream);
+        RAFT_CUDA_TRY(cudaStreamSynchronize(stream));
         log_info("run %d / %d", run + 1, run_count);
         for (std::size_t batch_id = 0; batch_id < num_batches; ++batch_id) {
           std::size_t row       = batch_id * batch_size;
           int actual_batch_size = (batch_id == num_batches - 1) ? query_set_size - row : batch_size;
-          RAFT_CUDA_TRY(cudaDeviceSynchronize());
-          algo->simulate_use(stream);
-          RAFT_CUDA_TRY(cudaStreamSynchronize(stream));
 #ifdef NVTX
           string nvtx_label = "batch" + to_string(batch_id);
           if (run_count != 1) { nvtx_label = "run" + to_string(run) + "-" + nvtx_label; }
@@ -383,6 +383,7 @@ inline void search(const Dataset<T>* dataset, const std::vector<Configuration::I
             break;
           }
 #endif
+          RAFT_CUDA_TRY(cudaStreamSynchronize(stream));
           Timer timer;
 #ifdef NVTX
           nvtxRangePush(nvtx_label.c_str());

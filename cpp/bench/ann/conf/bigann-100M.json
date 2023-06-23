@@ -1,9 +1,9 @@
 {
   "dataset" : {
     "name" : "bigann-100M",
-    "base_file" : "/datastore/storage/nvidia/workspace/data/bigann-1B/base.1B.u8bin",
+    "base_file" : "/data/bigann-1B/base.1B.u8bin",
     "subset_size" : 100000000,
-    "query_file" : "/home/achirkin/Documents/nvidia/workspace/raft-mm-experiment/data/bigann-1B/query.public.10K.u8bin",
+    "query_file" : "/data/bigann-1B/query.public.10K.u8bin",
     "distance" : "euclidean"
   },
 

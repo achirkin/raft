@@ -76,6 +76,11 @@ void parse_build_param(const nlohmann::json& conf,
   if (conf.contains("ratio")) { param.kmeans_trainset_fraction = 1.0 / (double)conf.at("ratio"); }
   if (conf.contains("pq_bits")) { param.pq_bits = conf.at("pq_bits"); }
   if (conf.contains("pq_dim")) { param.pq_dim = conf.at("pq_dim"); }
+  if (conf.contains("per_cluster")) {
+    param.codebook_kind = conf.at("per_cluster")
+                            ? raft::neighbors::ivf_pq::codebook_gen::PER_CLUSTER
+                            : raft::neighbors::ivf_pq::codebook_gen::PER_SUBSPACE;
+  }
 }
 
 template <typename T, typename IdxT>

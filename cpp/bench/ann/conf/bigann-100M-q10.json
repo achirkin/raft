@@ -15,223 +15,108 @@
 
   "index" : [
     {
-      "name": "raft_ivf_pq.dimpq64-cluster10K-float-fp8",
+      "name": "raft_ivf_pq.dimpq128-cluster10K-float-fp8",
       "algo": "raft_ivf_pq",
-      "build_param": {
-        "niter": 25,
-        "nlist": 10000,
-        "pq_dim": 64,
-        "ratio": 10
-      },
-      "file": "index/bigann-100M/raft_ivf_pq/dimpq64-cluster10K",
+      "build_param": {"niter": 50, "nlist": 10000, "pq_dim": 128, "ratio": 3},
+      "file": "index/bigann-100M/raft_ivf_pq/dimpq128-cluster10K",
       "search_params": [
-        {
-          "numProbes": 20,
-          "internalDistanceDtype": "float",
-          "smemLutDtype": "fp8"
-        },
-        {
-          "numProbes": 30,
-          "internalDistanceDtype": "float",
-          "smemLutDtype": "fp8"
-        },
-        {
-          "numProbes": 40,
-          "internalDistanceDtype": "float",
-          "smemLutDtype": "fp8"
-        },
-        {
-          "numProbes": 50,
-          "internalDistanceDtype": "float",
-          "smemLutDtype": "fp8"
-        },
-        {
-          "numProbes": 100,
-          "internalDistanceDtype": "float",
-          "smemLutDtype": "fp8"
-        },
-        {
-          "numProbes": 200,
-          "internalDistanceDtype": "float",
-          "smemLutDtype": "fp8"
-        },
-        {
-          "numProbes": 500,
-          "internalDistanceDtype": "float",
-          "smemLutDtype": "fp8"
-        },
-        {
-          "numProbes": 1000,
-          "internalDistanceDtype": "float",
-          "smemLutDtype": "fp8"
-        }
+        {"numProbes": 10, "internalDistanceDtype": "float", "smemLutDtype": "fp8"},
+        {"numProbes": 20, "internalDistanceDtype": "float", "smemLutDtype": "fp8"},
+        {"numProbes": 30, "internalDistanceDtype": "float", "smemLutDtype": "fp8"},
+        {"numProbes": 40, "internalDistanceDtype": "float", "smemLutDtype": "fp8"},
+        {"numProbes": 50, "internalDistanceDtype": "float", "smemLutDtype": "fp8"},
+        {"numProbes": 100, "internalDistanceDtype": "float", "smemLutDtype": "fp8"},
+        {"numProbes": 200, "internalDistanceDtype": "float", "smemLutDtype": "fp8"},
+        {"numProbes": 500, "internalDistanceDtype": "float", "smemLutDtype": "fp8"}
       ],
-      "search_result_file": "result/bigann-100M/raft_ivf_pq/dimpq64-cluster10K-float-fp8"
+      "search_result_file": "result/bigann-100M/raft_ivf_pq/dimpq128-cluster10K-float-fp8"
     },
     {
-      "name": "raft_ivf_pq.dimpq64-cluster10K-float-fp8-prefetch-4",
-      "algo": "raft_ivf_pq",
-      "build_param": {
-        "niter": 25,
-        "nlist": 10000,
-        "pq_dim": 64,
-        "ratio": 10,
-        "stream_pool_size": 4
-      },
-      "file": "index/bigann-100M/raft_ivf_pq/dimpq64-cluster10K",
-      "search_params": [
-        {
-          "numProbes": 20,
-          "internalDistanceDtype": "float",
-          "smemLutDtype": "fp8"
-        },
-        {
-          "numProbes": 30,
-          "internalDistanceDtype": "float",
-          "smemLutDtype": "fp8"
-        },
-        {
-          "numProbes": 40,
-          "internalDistanceDtype": "float",
-          "smemLutDtype": "fp8"
-        },
-        {
-          "numProbes": 50,
-          "internalDistanceDtype": "float",
-          "smemLutDtype": "fp8"
-        },
-        {
-          "numProbes": 100,
-          "internalDistanceDtype": "float",
-          "smemLutDtype": "fp8"
-        },
-        {
-          "numProbes": 200,
-          "internalDistanceDtype": "float",
-          "smemLutDtype": "fp8"
-        },
-        {
-          "numProbes": 500,
-          "internalDistanceDtype": "float",
-          "smemLutDtype": "fp8"
-        },
-        {
-          "numProbes": 1000,
-          "internalDistanceDtype": "float",
-          "smemLutDtype": "fp8"
-        }
+      "name" : "hnswlib.M12",
+      "algo" : "hnswlib",
+      "build_param": {"M":12, "efConstruction":500, "numThreads":32},
+      "file" : "index/bigann-100M/hnswlib/M12",
+      "search_params" : [
+        {"ef":10, "numThreads":1},
+        {"ef":20, "numThreads":1},
+        {"ef":40, "numThreads":1},
+        {"ef":60, "numThreads":1},
+        {"ef":80, "numThreads":1},
+        {"ef":120, "numThreads":1},
+        {"ef":200, "numThreads":1},
+        {"ef":400, "numThreads":1},
+        {"ef":600, "numThreads":1},
+        {"ef":800, "numThreads":1},
+        {"ef":10, "numThreads":10},
+        {"ef":20, "numThreads":10},
+        {"ef":40, "numThreads":10},
+        {"ef":60, "numThreads":10},
+        {"ef":80, "numThreads":10},
+        {"ef":120, "numThreads":10},
+        {"ef":200, "numThreads":10},
+        {"ef":400, "numThreads":10},
+        {"ef":600, "numThreads":10},
+        {"ef":800, "numThreads":10}
       ],
-      "search_result_file": "result/bigann-100M/raft_ivf_pq/dimpq64-cluster10K-float-fp8-prefetch-4"
+      "search_result_file" : "result/bigann-100M/hnswlib/M12"
     },
     {
-      "name": "raft_ivf_pq.dimpq64-cluster10K-float-fp8-prefetch-8",
-      "algo": "raft_ivf_pq",
-      "build_param": {
-        "niter": 25,
-        "nlist": 10000,
-        "pq_dim": 64,
-        "ratio": 10,
-        "stream_pool_size": 8
-      },
-      "file": "index/bigann-100M/raft_ivf_pq/dimpq64-cluster10K",
-      "search_params": [
-        {
-          "numProbes": 20,
-          "internalDistanceDtype": "float",
-          "smemLutDtype": "fp8"
-        },
-        {
-          "numProbes": 30,
-          "internalDistanceDtype": "float",
-          "smemLutDtype": "fp8"
-        },
-        {
-          "numProbes": 40,
-          "internalDistanceDtype": "float",
-          "smemLutDtype": "fp8"
-        },
-        {
-          "numProbes": 50,
-          "internalDistanceDtype": "float",
-          "smemLutDtype": "fp8"
-        },
-        {
-          "numProbes": 100,
-          "internalDistanceDtype": "float",
-          "smemLutDtype": "fp8"
-        },
-        {
-          "numProbes": 200,
-          "internalDistanceDtype": "float",
-          "smemLutDtype": "fp8"
-        },
-        {
-          "numProbes": 500,
-          "internalDistanceDtype": "float",
-          "smemLutDtype": "fp8"
-        },
-        {
-          "numProbes": 1000,
-          "internalDistanceDtype": "float",
-          "smemLutDtype": "fp8"
-        }
+      "name" : "hnswlib.M24",
+      "algo" : "hnswlib",
+      "build_param": {"M":24, "efConstruction":500, "numThreads":32},
+      "file" : "index/bigann-100M/hnswlib/M24",
+      "search_params" : [
+        {"ef":10, "numThreads":1},
+        {"ef":20, "numThreads":1},
+        {"ef":40, "numThreads":1},
+        {"ef":60, "numThreads":1},
+        {"ef":80, "numThreads":1},
+        {"ef":120, "numThreads":1},
+        {"ef":200, "numThreads":1},
+        {"ef":400, "numThreads":1},
+        {"ef":600, "numThreads":1},
+        {"ef":800, "numThreads":1},
+        {"ef":10, "numThreads":10},
+        {"ef":20, "numThreads":10},
+        {"ef":40, "numThreads":10},
+        {"ef":60, "numThreads":10},
+        {"ef":80, "numThreads":10},
+        {"ef":120, "numThreads":10},
+        {"ef":200, "numThreads":10},
+        {"ef":400, "numThreads":10},
+        {"ef":600, "numThreads":10},
+        {"ef":800, "numThreads":10}
       ],
-      "search_result_file": "result/bigann-100M/raft_ivf_pq/dimpq64-cluster10K-float-fp8-prefetch-8"
+      "search_result_file" : "result/bigann-100M/hnswlib/M24"
     },
     {
-      "name": "raft_ivf_pq.dimpq64-cluster10K-float-fp8-prefetch-1",
-      "algo": "raft_ivf_pq",
-      "build_param": {
-        "niter": 25,
-        "nlist": 10000,
-        "pq_dim": 64,
-        "ratio": 10,
-        "stream_pool_size": 1
-      },
-      "file": "index/bigann-100M/raft_ivf_pq/dimpq64-cluster10K",
-      "search_params": [
-        {
-          "numProbes": 20,
-          "internalDistanceDtype": "float",
-          "smemLutDtype": "fp8"
-        },
-        {
-          "numProbes": 30,
-          "internalDistanceDtype": "float",
-          "smemLutDtype": "fp8"
-        },
-        {
-          "numProbes": 40,
-          "internalDistanceDtype": "float",
-          "smemLutDtype": "fp8"
-        },
-        {
-          "numProbes": 50,
-          "internalDistanceDtype": "float",
-          "smemLutDtype": "fp8"
-        },
-        {
-          "numProbes": 100,
-          "internalDistanceDtype": "float",
-          "smemLutDtype": "fp8"
-        },
-        {
-          "numProbes": 200,
-          "internalDistanceDtype": "float",
-          "smemLutDtype": "fp8"
-        },
-        {
-          "numProbes": 500,
-          "internalDistanceDtype": "float",
-          "smemLutDtype": "fp8"
-        },
-        {
-          "numProbes": 1000,
-          "internalDistanceDtype": "float",
-          "smemLutDtype": "fp8"
-        }
+      "name" : "hnswlib.M36",
+      "algo" : "hnswlib",
+      "build_param": {"M":36, "efConstruction":500, "numThreads":32},
+      "file" : "index/bigann-100M/hnswlib/M36",
+      "search_params" : [
+        {"ef":10, "numThreads":1},
+        {"ef":20, "numThreads":1},
+        {"ef":40, "numThreads":1},
+        {"ef":60, "numThreads":1},
+        {"ef":80, "numThreads":1},
+        {"ef":120, "numThreads":1},
+        {"ef":200, "numThreads":1},
+        {"ef":400, "numThreads":1},
+        {"ef":600, "numThreads":1},
+        {"ef":800, "numThreads":1},
+        {"ef":10, "numThreads":10},
+        {"ef":20, "numThreads":10},
+        {"ef":40, "numThreads":10},
+        {"ef":60, "numThreads":10},
+        {"ef":80, "numThreads":10},
+        {"ef":120, "numThreads":10},
+        {"ef":200, "numThreads":10},
+        {"ef":400, "numThreads":10},
+        {"ef":600, "numThreads":10},
+        {"ef":800, "numThreads":10}
       ],
-      "search_result_file": "result/bigann-100M/raft_ivf_pq/dimpq64-cluster10K-float-fp8-prefetch-1"
+      "search_result_file" : "result/bigann-100M/hnswlib/M36"
     }
   ]
 }

@@ -20,10 +20,14 @@
 #include <string>
 #include <vector>
 
+#ifdef CPU_ONLY
+typedef void* cudaStream_t;
+#define RAFT_CUDA_TRY(call)
+#else
 #include <cuda_runtime_api.h>
+#endif
 
 namespace raft::bench::ann {
-
 enum class Metric {
   kInnerProduct,
   kEuclidean,

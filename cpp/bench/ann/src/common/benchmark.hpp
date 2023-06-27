@@ -13,13 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+#ifndef CPU_ONLY
 #ifdef NVTX
 #include <nvtx3/nvToolsExt.h>
 #endif
-#include <unistd.h>
-
 #include <rmm/mr/device/per_device_resource.hpp>
 #include <rmm/mr/device/pool_memory_resource.hpp>
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -30,6 +31,7 @@
 #include <memory>
 #include <numeric>
 #include <string>
+#include <unistd.h>
 #include <unordered_set>
 #include <vector>
 
@@ -557,9 +559,13 @@ inline int run_main(int argc, char** argv)
     }
   }
   if (fixed_mem > 0) {
+#ifndef CPU_ONLY
     auto mr = new rmm::mr::pool_memory_resource(
       rmm::mr::get_current_device_resource(), fixed_mem, fixed_mem);
     rmm::mr::set_current_device_resource(mr);
+#else
+    log_info("CPU-only version: not setting the memory limit (%zu GiB)", fixed_mem);
+#endif
   }
   if (build_mode == search_mode) {
     std::cerr << "one and only one of -b and -s should be specified\n\n" << usage(argv[0]) << endl;

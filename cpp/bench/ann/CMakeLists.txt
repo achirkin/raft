@@ -60,6 +60,7 @@ endif()
 
 function(ConfigureAnnBench)
 
+  set(options CPU_ONLY)
   set(oneValueArgs NAME)
   set(multiValueArgs PATH LINKS CXXFLAGS INCLUDES)
 
@@ -69,13 +70,24 @@ function(ConfigureAnnBench)
 
   set(BENCH_NAME ${ConfigureAnnBench_NAME}_ANN_BENCH)
 
+  if (ConfigureAnnBench_CPU_ONLY)
+    message(STATUS "${BENCH_NAME} is to be compiled in CPU-only mode.")
+  else()
+    message(STATUS "${BENCH_NAME} is to be compiled in normal (GPU) mode.")
+  endif()
+
   add_executable(
     ${BENCH_NAME} ${ConfigureAnnBench_PATH} bench/ann/src/common/conf.cpp
                   bench/ann/src/common/util.cpp
   )
+  set(RAFT_ANN_BENCH_INCLUDE_CUDA true)
+  if (ConfigureAnnBench_CPU_ONLY)
+    set(RAFT_ANN_BENCH_INCLUDE_CUDA false)
+    set(RAFT_ANN_BENCH_USE_MULTIGPU false)
+  endif()
   target_link_libraries(
     ${BENCH_NAME}
-    PRIVATE raft::raft
+    PRIVATE $<$<BOOL:${RAFT_ANN_BENCH_INCLUDE_CUDA}>:raft::raft>
             nlohmann_json::nlohmann_json
             $<$<BOOL:${RAFT_ANN_BENCH_USE_MULTIGPU}>:NCCL::NCCL>
             ${ConfigureAnnBench_LINKS}
@@ -85,6 +97,17 @@ function(ConfigureAnnBench)
             $<TARGET_NAME_IF_EXISTS:conda_env>
   )
 
+  if (ConfigureAnnBench_CPU_ONLY)
+  set_target_properties(
+    ${BENCH_NAME}
+    PROPERTIES # set target compile options
+               INSTALL_RPATH "\$ORIGIN/../../../lib"
+               CXX_STANDARD 17
+               CXX_STANDARD_REQUIRED ON
+               POSITION_INDEPENDENT_CODE ON
+               INTERFACE_POSITION_INDEPENDENT_CODE ON
+  )
+  else()
   set_target_properties(
     ${BENCH_NAME}
     PROPERTIES # set target compile options
@@ -96,13 +119,21 @@ function(ConfigureAnnBench)
                POSITION_INDEPENDENT_CODE ON
                INTERFACE_POSITION_INDEPENDENT_CODE ON
   )
+  endif()
+
 
   set(${ConfigureAnnBench_CXXFLAGS} ${RAFT_CXX_FLAGS} ${ConfigureAnnBench_CXXFLAGS})
 
-  target_compile_options(
-    ${BENCH_NAME} PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:${ConfigureAnnBench_CXXFLAGS}>"
-                          "$<$<COMPILE_LANGUAGE:CUDA>:${RAFT_CUDA_FLAGS}>"
-  )
+  if (ConfigureAnnBench_CPU_ONLY)
+    target_compile_options(
+      ${BENCH_NAME} PRIVATE ${ConfigureAnnBench_CXXFLAGS} -mavx2 -DCPU_ONLY
+    )
+  else()
+    target_compile_options(
+      ${BENCH_NAME} PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:${ConfigureAnnBench_CXXFLAGS}>" -mavx2
+                            "$<$<COMPILE_LANGUAGE:CUDA>:${RAFT_CUDA_FLAGS}>"
+    )
+  endif()
 
   if(RAFT_ANN_BENCH_USE_${ConfigureAnnBench_NAME})
     target_compile_definitions(
@@ -128,6 +159,7 @@ endfunction()
 
 if(RAFT_ANN_BENCH_USE_HNSWLIB)
   ConfigureAnnBench(
+    CPU_ONLY
     NAME HNSWLIB PATH bench/ann/src/hnswlib/hnswlib_benchmark.cpp INCLUDES
     ${CMAKE_CURRENT_BINARY_DIR}/_deps/hnswlib-src/hnswlib CXXFLAGS "${HNSW_CXX_FLAGS}"
   )

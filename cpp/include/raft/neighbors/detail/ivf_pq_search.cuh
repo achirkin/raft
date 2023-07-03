@@ -423,13 +423,14 @@ void ivfpq_search_worker(raft::resources const& handle,
                          const index<IdxT>& index,
                          uint32_t max_samples,
                          uint32_t n_probes,
-                         uint32_t topK,
+                         uint32_t k_final,
+                         uint32_t k_per_probe,
                          uint32_t n_queries,
                          uint32_t queries_offset,            // needed for filtering
                          const uint32_t* clusters_to_probe,  // [n_queries, n_probes]
                          const float* query,                 // [n_queries, rot_dim]
-                         IdxT* neighbors,                    // [n_queries, topK]
-                         float* distances,                   // [n_queries, topK]
+                         IdxT* neighbors,                    // [n_queries, k_final]
+                         float* distances,                   // [n_queries, k_final]
                          float scaling_factor,
                          double preferred_shmem_carveout,
                          SampleFilterT sample_filter,
@@ -437,8 +438,8 @@ void ivfpq_search_worker(raft::resources const& handle,
 {
   auto stream = resource::get_cuda_stream(handle);
 
-  bool manage_local_topk = is_local_topk_feasible(topK, n_probes, n_queries);
-  auto topk_len          = manage_local_topk ? n_probes * topK : max_samples;
+  bool manage_local_topk = is_local_topk_feasible(k_per_probe, n_probes, n_queries);
+  auto topk_len          = manage_local_topk ? n_probes * k_per_probe : max_samples;
   if (manage_local_topk) {
     RAFT_LOG_DEBUG("Fused version of the search kernel is selected (manage_local_topk == true)");
   } else {
@@ -470,7 +471,7 @@ void ivfpq_search_worker(raft::resources const& handle,
   if constexpr (sizeof(IdxT) == sizeof(uint32_t)) {
     neighbors_uint32 = reinterpret_cast<uint32_t*>(neighbors);
   } else {
-    neighbors_uint32_buf.resize(n_queries * topK, stream);
+    neighbors_uint32_buf.resize(n_queries * k_final, stream);
     neighbors_uint32 = neighbors_uint32_buf.data();
   }
 
@@ -561,7 +562,7 @@ void ivfpq_search_worker(raft::resources const& handle,
                                                            precomp_data_count,
                                                            n_queries,
                                                            n_probes,
-                                                           topK);
+                                                           k_per_probe);
 
   rmm::device_uvector<LutT> device_lut(search_instance.device_lut_size, stream, mr);
   std::optional<device_vector<float>> query_kths_buf{std::nullopt};
@@ -584,7 +585,7 @@ void ivfpq_search_worker(raft::resources const& handle,
                          queries_offset,
                          index.metric(),
                          index.codebook_kind(),
-                         topK,
+                         k_per_probe,
                          max_samples,
                          index.centers_rot().data_handle(),
                          index.pq_centers().data_handle(),
@@ -604,12 +605,12 @@ void ivfpq_search_worker(raft::resources const& handle,
                          coresidency);
 
   // Select topk vectors for each query
-  rmm::device_uvector<ScoreT> topk_dists(n_queries * topK, stream, mr);
+  rmm::device_uvector<ScoreT> topk_dists(n_queries * k_final, stream, mr);
   matrix::detail::select_k<ScoreT, uint32_t>(distances_buf.data(),
                                              neighbors_ptr,
                                              n_queries,
                                              topk_len,
-                                             topK,
+                                             k_final,
                                              topk_dists.data(),
                                              neighbors_uint32,
                                              true,
@@ -618,7 +619,7 @@ void ivfpq_search_worker(raft::resources const& handle,
 
   // Postprocessing
   postprocess_distances(
-    distances, topk_dists.data(), index.metric(), n_queries, topK, scaling_factor, stream);
+    distances, topk_dists.data(), index.metric(), n_queries, k_final, scaling_factor, stream);
   postprocess_neighbors(neighbors,
                         neighbors_uint32,
                         index.inds_ptrs().data_handle(),
@@ -626,7 +627,7 @@ void ivfpq_search_worker(raft::resources const& handle,
                         chunk_index.data(),
                         n_queries,
                         n_probes,
-                        topK,
+                        k_final,
                         stream);
 }
 
@@ -762,6 +763,10 @@ inline void search(raft::resources const& handle,
     k,
     index.dim());
 
+  auto k_per_probe = params.limit_k_per_probe == 0 ? k : params.limit_k_per_probe;
+  RAFT_EXPECTS(k_per_probe * params.n_probes >= k,
+               "limit_k_per_probe * n_probes must be not smaller than k.");
+
   RAFT_EXPECTS(
     params.internal_distance_dtype == CUDA_R_16F || params.internal_distance_dtype == CUDA_R_32F,
     "internal_distance_dtype must be either CUDA_R_16F or CUDA_R_32F");
@@ -859,6 +864,7 @@ inline void search(raft::resources const& handle,
                       max_samples,
                       n_probes,
                       k,
+                      k_per_probe,
                       batch_size,
                       offset_q + offset_b,
                       clusters_to_probe.data() + uint64_t(n_probes) * offset_b,

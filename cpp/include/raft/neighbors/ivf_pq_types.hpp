@@ -144,6 +144,19 @@ struct search_params : ann::search_params {
    * performance if tweaked incorrectly.
    */
   double preferred_shmem_carveout = 1.0;
+  /**
+   * Limit the number of results produced in the intermediate step for every query-cluster probe.
+   * The results then are aggregated into a `n_probes * limit_k_per_probe`-element long list and `k`
+   * nearest neighbors selected among them as usual.
+   * It's possible, but does not make sense to set `limit_k_per_probe > k`;
+   * It's not allowed to set `limit_k_per_probe` such that `n_probes * limit_k_per_probe < k`.
+   *
+   * When set to `0` (default), exactly `k` results are selected per probe.
+   *
+   * Note: this setting reduces the recall; it's meant to be used together with refinement, where
+   * `k` passed to IVF-PQ algorithm is larger than the final desired number of neighbors.
+   */
+  uint32_t limit_k_per_probe = 0;
 };
 
 static_assert(std::is_aggregate_v<index_params>);

@@ -20,6 +20,8 @@
 #endif
 #include <rmm/mr/device/per_device_resource.hpp>
 #include <rmm/mr/device/pool_memory_resource.hpp>
+#else
+#undef NVTX
 #endif
 
 #include <algorithm>

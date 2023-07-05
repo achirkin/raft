@@ -566,6 +566,11 @@ inline int run_main(int argc, char** argv)
 #else
     log_info("CPU-only version: not setting the memory limit (%zu GiB)", fixed_mem);
 #endif
+  } else {
+#ifndef CPU_ONLY
+    auto mr = new rmm::mr::pool_memory_resource(rmm::mr::get_current_device_resource());
+    rmm::mr::set_current_device_resource(mr);
+#endif
   }
   if (build_mode == search_mode) {
     std::cerr << "one and only one of -b and -s should be specified\n\n" << usage(argv[0]) << endl;

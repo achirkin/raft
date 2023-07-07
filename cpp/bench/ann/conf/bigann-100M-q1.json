@@ -8,7 +8,7 @@
   },
 
   "search_basic_param" : {
-    "batch_size" : 10,
+    "batch_size" : 1,
     "k" : 100,
     "run_count" : 1
   },
@@ -29,7 +29,7 @@
         {"numProbes": 200, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 0},
         {"numProbes": 500, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 0}
       ],
-      "search_result_file": "result/bigann-100M-q10/raft_ivf_pq/dimpq128-cluster10K-half-fp8"
+      "search_result_file": "result/bigann-100M-q1/raft_ivf_pq/dimpq128-cluster10K-half-fp8"
     },
     {
       "name": "raft_ivf_pq.dimpq64-cluster10K-half-fp8-refine4",
@@ -48,7 +48,7 @@
         {"numProbes": 200, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 0},
         {"numProbes": 500, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 0}
       ],
-      "search_result_file": "result/bigann-100M-q10/raft_ivf_pq/dimpq64-cluster10K-half-fp8-refine4"
+      "search_result_file": "result/bigann-100M-q1/raft_ivf_pq/dimpq64-cluster10K-half-fp8-refine4"
     },
     {
       "name" : "hnswlib.M12",
@@ -65,19 +65,9 @@
         {"ef":200, "numThreads":1},
         {"ef":400, "numThreads":1},
         {"ef":600, "numThreads":1},
-        {"ef":800, "numThreads":1},
-        {"ef":10, "numThreads":10},
-        {"ef":20, "numThreads":10},
-        {"ef":40, "numThreads":10},
-        {"ef":60, "numThreads":10},
-        {"ef":80, "numThreads":10},
-        {"ef":120, "numThreads":10},
-        {"ef":200, "numThreads":10},
-        {"ef":400, "numThreads":10},
-        {"ef":600, "numThreads":10},
-        {"ef":800, "numThreads":10}
+        {"ef":800, "numThreads":1}
       ],
-      "search_result_file" : "result/bigann-100M-q10/hnswlib/M12"
+      "search_result_file" : "result/bigann-100M-q1/hnswlib/M12"
     },
     {
       "name" : "hnswlib.M24",
@@ -94,19 +84,9 @@
         {"ef":200, "numThreads":1},
         {"ef":400, "numThreads":1},
         {"ef":600, "numThreads":1},
-        {"ef":800, "numThreads":1},
-        {"ef":10, "numThreads":10},
-        {"ef":20, "numThreads":10},
-        {"ef":40, "numThreads":10},
-        {"ef":60, "numThreads":10},
-        {"ef":80, "numThreads":10},
-        {"ef":120, "numThreads":10},
-        {"ef":200, "numThreads":10},
-        {"ef":400, "numThreads":10},
-        {"ef":600, "numThreads":10},
-        {"ef":800, "numThreads":10}
+        {"ef":800, "numThreads":1}
       ],
-      "search_result_file" : "result/bigann-100M-q10/hnswlib/M24"
+      "search_result_file" : "result/bigann-100M-q1/hnswlib/M24"
     },
     {
       "name" : "hnswlib.M36",
@@ -123,19 +103,9 @@
         {"ef":200, "numThreads":1},
         {"ef":400, "numThreads":1},
         {"ef":600, "numThreads":1},
-        {"ef":800, "numThreads":1},
-        {"ef":10, "numThreads":10},
-        {"ef":20, "numThreads":10},
-        {"ef":40, "numThreads":10},
-        {"ef":60, "numThreads":10},
-        {"ef":80, "numThreads":10},
-        {"ef":120, "numThreads":10},
-        {"ef":200, "numThreads":10},
-        {"ef":400, "numThreads":10},
-        {"ef":600, "numThreads":10},
-        {"ef":800, "numThreads":10}
+        {"ef":800, "numThreads":1}
       ],
-      "search_result_file" : "result/bigann-100M-q10/hnswlib/M36"
+      "search_result_file" : "result/bigann-100M-q1/hnswlib/M36"
     }
   ]
 }

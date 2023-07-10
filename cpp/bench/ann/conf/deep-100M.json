@@ -1,7 +1,7 @@
 {
   "dataset" : {
     "name" : "deep-100M",
-    "base_file" : "data/deep-1B/base.1B.fbin",
+    "base_file" : "/data/deep-1B/base.1B.0-99999999.fbin",
     "subset_size" : 100000000,
     "query_file" : "data/deep-1B/query.public.10K.fbin",
     "distance" : "euclidean"

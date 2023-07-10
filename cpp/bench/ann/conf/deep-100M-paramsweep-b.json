@@ -1,0 +1,223 @@
+{
+  "dataset" : {
+    "name" : "deep-100M",
+    "base_file" : "/data/deep-1B/base.1B.0-99999999.fbin",
+    "query_file" : "/data/deep-1B/query.public.10K.fbin",
+    "distance" : "euclidean"
+  },
+
+  "search_basic_param" : {
+    "batch_size" : 10000,
+    "k" : 100,
+    "run_count" : 5
+  },
+
+  "index" : [
+    {
+      "name": "raft_ivf_pq.dimpq64-cluster10K-half-fp8",
+      "algo": "raft_ivf_pq",
+      "build_param": {"niter": 50, "nlist": 10000, "pq_dim": 64, "ratio": 3},
+      "file": "index/deep-100M/raft_ivf_pq/dimpq64-cluster10K",
+      "search_params": [
+        {"numProbes": 5, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 0}
+      ],
+      "search_result_file": "result/deep-100M-paramsweep/raft_ivf_pq/dimpq64-cluster10K-half-fp8"
+    },
+    {
+      "name": "raft_ivf_pq.dimpq128-bitpq4-cluster10K-half-fp8",
+      "algo": "raft_ivf_pq",
+      "build_param": {"niter": 50, "nlist": 10000, "pq_dim": 128, "pq_bits": 4, "ratio": 3},
+      "file": "index/deep-100M/raft_ivf_pq/dimpq128-bitpq4-cluster10K",
+      "search_params": [
+        {"numProbes": 5, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 0}
+      ],
+      "search_result_file": "result/deep-100M-paramsweep/raft_ivf_pq/dimpq128-bitpq4-cluster10K-half-fp8"
+    },
+    {
+      "name": "raft_ivf_pq.dimpq128-bitpq6-cluster10K-half-fp8",
+      "algo": "raft_ivf_pq",
+      "build_param": {"niter": 50, "nlist": 10000, "pq_dim": 128, "pq_bits": 6, "ratio": 3},
+      "file": "index/deep-100M/raft_ivf_pq/dimpq128-bitpq6-cluster10K",
+      "search_params": [
+        {"numProbes": 5, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 0}
+      ],
+      "search_result_file": "result/deep-100M-paramsweep/raft_ivf_pq/dimpq128-bitpq6-cluster10K-half-fp8"
+    },
+    {
+      "name": "raft_ivf_pq.dimpq128-bitpq8-cluster10K-half-fp8",
+      "algo": "raft_ivf_pq",
+      "build_param": {"niter": 50, "nlist": 10000, "pq_dim": 128, "pq_bits": 8, "ratio": 3},
+      "file": "index/deep-100M/raft_ivf_pq/dimpq128-bitpq8-cluster10K",
+      "search_params": [
+        {"numProbes": 5, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 0}
+      ],
+      "search_result_file": "result/deep-100M-paramsweep/raft_ivf_pq/dimpq128-bitpq8-cluster10K-half-fp8"
+    },
+
+    {
+      "name": "raft_ivf_pq.dimpq128-bitpq4-cluster10K-percluster-half-fp8",
+      "algo": "raft_ivf_pq",
+      "build_param": {"niter": 50, "nlist": 10000, "pq_dim": 128, "pq_bits": 4, "ratio": 3, "per_cluster": true},
+      "file": "index/deep-100M/raft_ivf_pq/dimpq128-bitpq4-cluster10K-percluster",
+      "search_params": [
+        {"numProbes": 5, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 0}
+      ],
+      "search_result_file": "result/deep-100M-paramsweep/raft_ivf_pq/dimpq128-bitpq4-cluster10K-percluster-half-fp8"
+    },
+    {
+      "name": "raft_ivf_pq.dimpq128-bitpq6-cluster10K-percluster-half-fp8",
+      "algo": "raft_ivf_pq",
+      "build_param": {"niter": 50, "nlist": 10000, "pq_dim": 128, "pq_bits": 6, "ratio": 3, "per_cluster": true},
+      "file": "index/deep-100M/raft_ivf_pq/dimpq128-bitpq6-cluster10K-percluster",
+      "search_params": [
+        {"numProbes": 5, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 0}
+      ],
+      "search_result_file": "result/deep-100M-paramsweep/raft_ivf_pq/dimpq128-bitpq6-cluster10K-percluster-half-fp8"
+    },
+    {
+      "name": "raft_ivf_pq.dimpq128-bitpq8-cluster10K-percluster-half-fp8",
+      "algo": "raft_ivf_pq",
+      "build_param": {"niter": 50, "nlist": 10000, "pq_dim": 128, "pq_bits": 8, "ratio": 3, "per_cluster": true},
+      "file": "index/deep-100M/raft_ivf_pq/dimpq128-bitpq8-cluster10K-percluster",
+      "search_params": [
+        {"numProbes": 5, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 0}
+      ],
+      "search_result_file": "result/deep-100M-paramsweep/raft_ivf_pq/dimpq128-bitpq8-cluster10K-percluster-half-fp8"
+    },
+    {
+      "name": "raft_ivf_pq.dimpq64-cluster10K-percluster-half-fp8-refine4-128",
+      "algo": "raft_ivf_pq",
+      "build_param": {"niter": 50, "nlist": 10000, "pq_dim": 64, "ratio": 3, "per_cluster": true},
+      "refine_ratio": 4,
+      "file": "index/deep-100M/raft_ivf_pq/dimpq64-cluster10K-percluster",
+      "search_params": [
+        {"numProbes": 5, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 128}
+      ],
+      "search_result_file": "result/deep-100M-paramsweep/raft_ivf_pq/dimpq64-cluster10K-percluster-half-fp8-refine4-128"
+    },
+    {
+      "name": "raft_ivf_pq.dimpq64-bitpq4-cluster10K-half-fp8-refine4",
+      "algo": "raft_ivf_pq",
+      "build_param": {"niter": 50, "nlist": 10000, "pq_dim": 64, "pq_bits": 4, "ratio": 3},
+      "refine_ratio": 4,
+      "file": "index/deep-100M/raft_ivf_pq/dimpq64-bitpq4-cluster10K",
+      "search_params": [
+        {"numProbes": 5, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 0}
+      ],
+      "search_result_file": "result/deep-100M-paramsweep/raft_ivf_pq/dimpq64-bitpq4-cluster10K-half-fp8-refine4"
+    },
+    {
+      "name": "raft_ivf_pq.dimpq64-bitpq5-cluster10K-half-fp8-refine4",
+      "algo": "raft_ivf_pq",
+      "build_param": {"niter": 50, "nlist": 10000, "pq_dim": 64, "pq_bits": 5, "ratio": 3},
+      "refine_ratio": 4,
+      "file": "index/deep-100M/raft_ivf_pq/dimpq64-bitpq5-cluster10K",
+      "search_params": [
+        {"numProbes": 5, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 0}
+      ],
+      "search_result_file": "result/deep-100M-paramsweep/raft_ivf_pq/dimpq64-bitpq5-cluster10K-half-fp8-refine4"
+    },
+    {
+      "name": "raft_ivf_pq.dimpq64-cluster50K-half-fp8",
+      "algo": "raft_ivf_pq",
+      "build_param": {"niter": 50, "nlist": 50000, "pq_dim": 64, "ratio": 3},
+      "file": "index/deep-100M/raft_ivf_pq/dimpq64-cluster50K",
+      "search_params": [
+        {"numProbes": 5, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 0}
+      ],
+      "search_result_file": "result/deep-100M-paramsweep/raft_ivf_pq/dimpq64-cluster50K-half-fp8"
+    },
+    {
+      "name": "raft_ivf_pq.dimpq128-bitpq4-cluster50K-half-fp8",
+      "algo": "raft_ivf_pq",
+      "build_param": {"niter": 50, "nlist": 50000, "pq_dim": 128, "pq_bits": 4, "ratio": 3},
+      "file": "index/deep-100M/raft_ivf_pq/dimpq128-bitpq4-cluster50K",
+      "search_params": [
+        {"numProbes": 5, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 0}
+      ],
+      "search_result_file": "result/deep-100M-paramsweep/raft_ivf_pq/dimpq128-bitpq4-cluster50K-half-fp8"
+    },
+    {
+      "name": "raft_ivf_pq.dimpq128-bitpq6-cluster50K-half-fp8",
+      "algo": "raft_ivf_pq",
+      "build_param": {"niter": 50, "nlist": 50000, "pq_dim": 128, "pq_bits": 6, "ratio": 3},
+      "file": "index/deep-100M/raft_ivf_pq/dimpq128-bitpq6-cluster50K",
+      "search_params": [
+        {"numProbes": 5, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 0}
+      ],
+      "search_result_file": "result/deep-100M-paramsweep/raft_ivf_pq/dimpq128-bitpq6-cluster50K-half-fp8"
+    },
+    {
+      "name": "raft_ivf_pq.dimpq128-bitpq8-cluster50K-half-fp8",
+      "algo": "raft_ivf_pq",
+      "build_param": {"niter": 50, "nlist": 50000, "pq_dim": 128, "pq_bits": 8, "ratio": 3},
+      "file": "index/deep-100M/raft_ivf_pq/dimpq128-bitpq8-cluster50K",
+      "search_params": [
+        {"numProbes": 5, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 0}
+      ],
+      "search_result_file": "result/deep-100M-paramsweep/raft_ivf_pq/dimpq128-bitpq8-cluster50K-half-fp8"
+    },
+    {
+      "name": "raft_ivf_pq.dimpq64-cluster50K-percluster-half-fp8",
+      "algo": "raft_ivf_pq",
+      "build_param": {"niter": 50, "nlist": 50000, "pq_dim": 64, "ratio": 3, "per_cluster": true},
+      "file": "index/deep-100M/raft_ivf_pq/dimpq64-cluster50K-percluster",
+      "search_params": [
+        {"numProbes": 5, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 0}
+      ],
+      "search_result_file": "result/deep-100M-paramsweep/raft_ivf_pq/dimpq64-cluster50K-percluster-half-fp8"
+    },
+    {
+      "name": "raft_ivf_pq.dimpq128-bitpq4-cluster50K-percluster-half-fp8",
+      "algo": "raft_ivf_pq",
+      "build_param": {"niter": 50, "nlist": 50000, "pq_dim": 128, "pq_bits": 4, "ratio": 3, "per_cluster": true},
+      "file": "index/deep-100M/raft_ivf_pq/dimpq128-bitpq4-cluster50K-percluster",
+      "search_params": [
+        {"numProbes": 5, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 0}
+      ],
+      "search_result_file": "result/deep-100M-paramsweep/raft_ivf_pq/dimpq128-bitpq4-cluster50K-percluster-half-fp8"
+    },
+    {
+      "name": "raft_ivf_pq.dimpq128-bitpq6-cluster50K-percluster-half-fp8",
+      "algo": "raft_ivf_pq",
+      "build_param": {"niter": 50, "nlist": 50000, "pq_dim": 128, "pq_bits": 6, "ratio": 3, "per_cluster": true},
+      "file": "index/deep-100M/raft_ivf_pq/dimpq128-bitpq6-cluster50K-percluster",
+      "search_params": [
+        {"numProbes": 5, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 0}
+      ],
+      "search_result_file": "result/deep-100M-paramsweep/raft_ivf_pq/dimpq128-bitpq6-cluster50K-percluster-half-fp8"
+    },
+    {
+      "name": "raft_ivf_pq.dimpq128-bitpq8-cluster50K-percluster-half-fp8",
+      "algo": "raft_ivf_pq",
+      "build_param": {"niter": 50, "nlist": 50000, "pq_dim": 128, "pq_bits": 8, "ratio": 3, "per_cluster": true},
+      "file": "index/deep-100M/raft_ivf_pq/dimpq128-bitpq8-cluster50K-percluster",
+      "search_params": [
+        {"numProbes": 5, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 0}
+      ],
+      "search_result_file": "result/deep-100M-paramsweep/raft_ivf_pq/dimpq128-bitpq8-cluster50K-percluster-half-fp8"
+    },
+    {
+      "name": "raft_ivf_pq.dimpq64-bitpq4-cluster50K-half-fp8-refine4",
+      "algo": "raft_ivf_pq",
+      "build_param": {"niter": 50, "nlist": 50000, "pq_dim": 64, "pq_bits": 4, "ratio": 3},
+      "refine_ratio": 4,
+      "file": "index/deep-100M/raft_ivf_pq/dimpq64-bitpq4-cluster50K",
+      "search_params": [
+        {"numProbes": 5, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 0}
+      ],
+      "search_result_file": "result/deep-100M-paramsweep/raft_ivf_pq/dimpq64-bitpq4-cluster50K-half-fp8-refine4"
+    },
+    {
+      "name": "raft_ivf_pq.dimpq64-bitpq5-cluster50K-half-fp8-refine4",
+      "algo": "raft_ivf_pq",
+      "build_param": {"niter": 50, "nlist": 50000, "pq_dim": 64, "pq_bits": 5, "ratio": 3},
+      "refine_ratio": 4,
+      "file": "index/deep-100M/raft_ivf_pq/dimpq64-bitpq5-cluster50K",
+      "search_params": [
+        {"numProbes": 5, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 0}
+      ],
+      "search_result_file": "result/deep-100M-paramsweep/raft_ivf_pq/dimpq64-bitpq5-cluster50K-half-fp8-refine4"
+    }
+  ]
+}

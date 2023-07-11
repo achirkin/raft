@@ -10,7 +10,7 @@
   "search_basic_param" : {
     "batch_size" : 10,
     "k" : 100,
-    "run_count" : 5
+    "run_count" : 1
   },
 
   "index" : [

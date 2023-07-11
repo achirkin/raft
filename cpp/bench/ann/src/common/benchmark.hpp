@@ -382,10 +382,6 @@ inline void search(const Dataset<T>* dataset, const std::vector<Configuration::I
 #ifdef NVTX
           string nvtx_label = "batch" + to_string(batch_id);
           if (run_count != 1) { nvtx_label = "run" + to_string(run) + "-" + nvtx_label; }
-          if (batch_id == 10) {
-            run = run_count - 1;
-            break;
-          }
 #endif
           RAFT_CUDA_TRY(cudaStreamSynchronize(stream));
           Timer timer;

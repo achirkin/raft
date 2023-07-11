@@ -256,6 +256,26 @@
       "search_result_file": "result/deep-100M-k100-q1/raft_ivf_pq/dimpq64-bitpq5-cluster50K-half-fp8-refine4"
     },
     {
+      "name": "raft_ivf_pq.dimpq64-bitpq5-cluster50K-half-half-refine4",
+      "algo": "raft_ivf_pq",
+      "build_param": {"niter": 50, "nlist": 50000, "pq_dim": 64, "pq_bits": 5, "ratio": 3},
+      "refine_ratio": 4,
+      "file": "index/deep-100M/raft_ivf_pq/dimpq64-bitpq5-cluster50K",
+      "search_params": [
+        {"numProbes": 5, "internalDistanceDtype": "half", "smemLutDtype": "half", "limit_k_per_probe": 0},
+        {"numProbes": 10, "internalDistanceDtype": "half", "smemLutDtype": "half", "limit_k_per_probe": 0},
+        {"numProbes": 20, "internalDistanceDtype": "half", "smemLutDtype": "half", "limit_k_per_probe": 0},
+        {"numProbes": 30, "internalDistanceDtype": "half", "smemLutDtype": "half", "limit_k_per_probe": 0},
+        {"numProbes": 40, "internalDistanceDtype": "half", "smemLutDtype": "half", "limit_k_per_probe": 0},
+        {"numProbes": 50, "internalDistanceDtype": "half", "smemLutDtype": "half", "limit_k_per_probe": 0},
+        {"numProbes": 100, "internalDistanceDtype": "half", "smemLutDtype": "half", "limit_k_per_probe": 0},
+        {"numProbes": 200, "internalDistanceDtype": "half", "smemLutDtype": "half", "limit_k_per_probe": 0},
+        {"numProbes": 500, "internalDistanceDtype": "half", "smemLutDtype": "half", "limit_k_per_probe": 0},
+        {"numProbes": 1000, "internalDistanceDtype": "half", "smemLutDtype": "half", "limit_k_per_probe": 0}
+      ],
+      "search_result_file": "result/deep-100M-k100-q1/raft_ivf_pq/dimpq64-bitpq5-cluster50K-half-half-refine4"
+    },
+    {
       "name": "raft_ivf_pq.dimpq64-cluster50K-half-fp8-refine2-128",
       "algo": "raft_ivf_pq",
       "build_param": {"niter": 50, "nlist": 50000, "pq_dim": 64, "ratio": 3},

@@ -8,7 +8,7 @@
   },
 
   "search_basic_param" : {
-    "batch_size" : 10000,
+    "batch_size" : 1,
     "k" : 10,
     "run_count" : 5
   },
@@ -31,7 +31,7 @@
         {"ef":600, "numThreads":1},
         {"ef":800, "numThreads":1}
       ],
-      "search_result_file" : "result/deep-100M-k10/hnswlib/M12"
+      "search_result_file" : "result/deep-100M-k10-q1/hnswlib/M12"
     },
     {
       "name" : "hnswlib.M16",
@@ -50,7 +50,7 @@
         {"ef":600, "numThreads":1},
         {"ef":800, "numThreads":1}
       ],
-      "search_result_file" : "result/deep-100M-k10/hnswlib/M16"
+      "search_result_file" : "result/deep-100M-k10-q1/hnswlib/M16"
     },
     {
       "name" : "hnswlib.M24",
@@ -69,7 +69,7 @@
         {"ef":600, "numThreads":1},
         {"ef":800, "numThreads":1}
       ],
-      "search_result_file" : "result/deep-100M-k10/hnswlib/M24"
+      "search_result_file" : "result/deep-100M-k10-q1/hnswlib/M24"
     },
     {
       "name" : "hnswlib.M36",
@@ -88,7 +88,7 @@
         {"ef":600, "numThreads":1},
         {"ef":800, "numThreads":1}
       ],
-      "search_result_file" : "result/deep-100M-k10/hnswlib/M36"
+      "search_result_file" : "result/deep-100M-k10-q1/hnswlib/M36"
     },
     {
       "name" : "faiss_ivf_flat.nlist50K",
@@ -105,7 +105,7 @@
         {"nprobe":500},
         {"nprobe":1000}
       ],
-      "search_result_file" : "result/deep-100M-k10/faiss_ivf_flat/nlist50K"
+      "search_result_file" : "result/deep-100M-k10-q1/faiss_ivf_flat/nlist50K"
     },
     {
       "name" : "faiss_ivf_flat.nlist100K",
@@ -122,7 +122,7 @@
         {"nprobe":500},
         {"nprobe":1000}
       ],
-      "search_result_file" : "result/deep-100M-k10/faiss_ivf_flat/nlist100K"
+      "search_result_file" : "result/deep-100M-k10-q1/faiss_ivf_flat/nlist100K"
     },
     {
       "name" : "faiss_ivf_flat.nlist200K",
@@ -139,7 +139,7 @@
         {"nprobe":500},
         {"nprobe":1000}
       ],
-      "search_result_file" : "result/deep-100M-k10/faiss_ivf_flat/nlist200K"
+      "search_result_file" : "result/deep-100M-k10-q1/faiss_ivf_flat/nlist200K"
     },
 
 
@@ -158,7 +158,7 @@
         {"nprobe":200},
         {"nprobe":500}
       ],
-      "search_result_file" : "result/deep-100M-k10/faiss_ivf_pq/M48-nlist16K"
+      "search_result_file" : "result/deep-100M-k10-q1/faiss_ivf_pq/M48-nlist16K"
     },
     {
       "name" : "faiss_ivf_pq.M48-nlist50K",
@@ -175,7 +175,7 @@
         {"nprobe":500},
         {"nprobe":1000}
       ],
-      "search_result_file" : "result/deep-100M-k10/faiss_ivf_pq/M48-nlist50K"
+      "search_result_file" : "result/deep-100M-k10-q1/faiss_ivf_pq/M48-nlist50K"
     },
     {
       "name" : "faiss_ivf_pq.M48-nlist100K",
@@ -192,7 +192,7 @@
         {"nprobe":500},
         {"nprobe":1000}
       ],
-      "search_result_file" : "result/deep-100M-k10/faiss_ivf_pq/M48-nlist100K"
+      "search_result_file" : "result/deep-100M-k10-q1/faiss_ivf_pq/M48-nlist100K"
     },
 
 
@@ -215,7 +215,7 @@
         {"max_batch":10000, "max_k":10, "nprobe":500},
         {"max_batch":10000, "max_k":10, "nprobe":1000}
       ],
-      "search_result_file" : "result/deep-100M-k10/ivf_flat/nlist100K"
+      "search_result_file" : "result/deep-100M-k10-q1/ivf_flat/nlist100K"
     },
     {
       "name": "raft_ivf_pq.dimpq64-cluster50K-percluster-half-fp8",
@@ -233,7 +233,7 @@
         {"numProbes": 1000, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 0},
         {"numProbes": 2000, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 0}
       ],
-      "search_result_file": "result/deep-100M-k10/raft_ivf_pq/dimpq64-cluster50K-percluster-half-fp8"
+      "search_result_file": "result/deep-100M-k10-q1/raft_ivf_pq/dimpq64-cluster50K-percluster-half-fp8"
     },
     {
       "name": "raft_ivf_pq.dimpq64-bitpq5-cluster50K-half-fp8-refine4",
@@ -253,7 +253,27 @@
         {"numProbes": 500, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 0},
         {"numProbes": 1000, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 0}
       ],
-      "search_result_file": "result/deep-100M-k10/raft_ivf_pq/dimpq64-bitpq5-cluster50K-half-fp8-refine4"
+      "search_result_file": "result/deep-100M-k10-q1/raft_ivf_pq/dimpq64-bitpq5-cluster50K-half-fp8-refine4"
+    },
+    {
+      "name": "raft_ivf_pq.dimpq64-bitpq5-cluster50K-half-half-refine4",
+      "algo": "raft_ivf_pq",
+      "build_param": {"niter": 50, "nlist": 50000, "pq_dim": 64, "pq_bits": 5, "ratio": 3},
+      "refine_ratio": 4,
+      "file": "index/deep-100M/raft_ivf_pq/dimpq64-bitpq5-cluster50K",
+      "search_params": [
+        {"numProbes": 5, "internalDistanceDtype": "half", "smemLutDtype": "half", "limit_k_per_probe": 0},
+        {"numProbes": 10, "internalDistanceDtype": "half", "smemLutDtype": "half", "limit_k_per_probe": 0},
+        {"numProbes": 20, "internalDistanceDtype": "half", "smemLutDtype": "half", "limit_k_per_probe": 0},
+        {"numProbes": 30, "internalDistanceDtype": "half", "smemLutDtype": "half", "limit_k_per_probe": 0},
+        {"numProbes": 40, "internalDistanceDtype": "half", "smemLutDtype": "half", "limit_k_per_probe": 0},
+        {"numProbes": 50, "internalDistanceDtype": "half", "smemLutDtype": "half", "limit_k_per_probe": 0},
+        {"numProbes": 100, "internalDistanceDtype": "half", "smemLutDtype": "half", "limit_k_per_probe": 0},
+        {"numProbes": 200, "internalDistanceDtype": "half", "smemLutDtype": "half", "limit_k_per_probe": 0},
+        {"numProbes": 500, "internalDistanceDtype": "half", "smemLutDtype": "half", "limit_k_per_probe": 0},
+        {"numProbes": 1000, "internalDistanceDtype": "half", "smemLutDtype": "half", "limit_k_per_probe": 0}
+      ],
+      "search_result_file": "result/deep-100M-k10-q1/raft_ivf_pq/dimpq64-bitpq5-cluster50K-half-half-refine4"
     },
     {
       "name": "raft_ivf_pq.dimpq64-cluster50K-half-fp8-refine2-16",
@@ -271,7 +291,7 @@
         {"numProbes": 500, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 16},
         {"numProbes": 1000, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 16}
       ],
-      "search_result_file": "result/deep-100M-k10/raft_ivf_pq/dimpq64-cluster50K-half-fp8-refine2-16"
+      "search_result_file": "result/deep-100M-k10-q1/raft_ivf_pq/dimpq64-cluster50K-half-fp8-refine2-16"
     },
     {
       "name": "raft_ivf_pq.dimpq64-cluster50K-half-fp8-refine4-32",
@@ -289,7 +309,7 @@
         {"numProbes": 500, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 32},
         {"numProbes": 1000, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 32}
       ],
-      "search_result_file": "result/deep-100M-k10/raft_ivf_pq/dimpq64-cluster50K-half-fp8-refine4-32"
+      "search_result_file": "result/deep-100M-k10-q1/raft_ivf_pq/dimpq64-cluster50K-half-fp8-refine4-32"
     },
     {
       "name": "raft_ivf_pq.dimpq64-cluster10K-percluster-half-fp8-refine2-16",
@@ -308,7 +328,7 @@
         {"numProbes": 200, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 16},
         {"numProbes": 500, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 16}
       ],
-      "search_result_file": "result/deep-100M-k10/raft_ivf_pq/dimpq64-cluster10K-percluster-half-fp8-refine2-16"
+      "search_result_file": "result/deep-100M-k10-q1/raft_ivf_pq/dimpq64-cluster10K-percluster-half-fp8-refine2-16"
     },
     {
       "name": "raft_ivf_pq.dimpq64-cluster10K-percluster-half-fp8-refine4-32",
@@ -327,7 +347,7 @@
         {"numProbes": 200, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 32},
         {"numProbes": 500, "internalDistanceDtype": "half", "smemLutDtype": "fp8", "limit_k_per_probe": 32}
       ],
-      "search_result_file": "result/deep-100M-k10/raft_ivf_pq/dimpq64-cluster10K-percluster-half-fp8-refine4-32"
+      "search_result_file": "result/deep-100M-k10-q1/raft_ivf_pq/dimpq64-cluster10K-percluster-half-fp8-refine4-32"
     }
   ]
 }

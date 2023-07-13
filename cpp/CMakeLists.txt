@@ -145,6 +145,27 @@ rapids_find_package(
 include(cmake/modules/ConfigureCUDA.cmake)
 
 # ##################################################################################################
+# * Vector instructions -------------------------------------------------------------
+
+include(cmake/modules/FindAVX.cmake)
+
+if(CXX_AVX512_FOUND)
+    set(RAFT_CXX_FLAGS ${RAFT_CXX_FLAGS} ${CXX_AVX512_FLAGS})
+    set(RAFT_CUDA_FLAGS ${RAFT_CUDA_FLAGS} ${CXX_AVX512_FLAGS})
+elseif(CXX_AVX2_FOUND)
+    set(RAFT_CXX_FLAGS ${RAFT_CXX_FLAGS} ${CXX_AVX2_FLAGS})
+    set(RAFT_CUDA_FLAGS ${RAFT_CUDA_FLAGS} ${CXX_AVX2_FLAGS})
+elseif(CXX_AVX_FOUND)
+    set(RAFT_CXX_FLAGS ${RAFT_CXX_FLAGS} ${CXX_AVX_FLAGS})
+    set(RAFT_CUDA_FLAGS ${RAFT_CUDA_FLAGS} ${CXX_AVX_FLAGS})
+elseif(CXX_NEON_FOUND)
+    set(RAFT_CXX_FLAGS ${RAFT_CXX_FLAGS} ${CXX_NEON_FLAGS})
+    set(RAFT_CUDA_FLAGS ${RAFT_CUDA_FLAGS} ${CXX_NEON_FLAGS})
+endif()
+MESSAGE("RAFT_CXX_FLAGS: ${RAFT_CXX_FLAGS}")
+MESSAGE("RAFT_CUDA_FLAGS: ${RAFT_CUDA_FLAGS}")
+
+# ##################################################################################################
 # * Requirements -------------------------------------------------------------
 
 # add third party dependencies using CPM

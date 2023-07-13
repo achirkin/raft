@@ -126,7 +126,7 @@ function(ConfigureAnnBench)
 
   if (ConfigureAnnBench_CPU_ONLY)
     target_compile_options(
-      ${BENCH_NAME} PRIVATE ${ConfigureAnnBench_CXXFLAGS} -mavx2 -DCPU_ONLY
+      ${BENCH_NAME} PRIVATE ${ConfigureAnnBench_CXXFLAGS} -DCPU_ONLY
     )
   else()
     target_compile_options(

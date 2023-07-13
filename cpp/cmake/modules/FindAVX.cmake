@@ -65,12 +65,27 @@ SET(AVX2_CODE
 "
 )
 
+SET(NEON_CODE
+    "
+  #include <arm_neon.h>
+
+  int main()
+  {
+    uint8x16_t a = vmovq_n_u8(1);
+    uint8x16_t b = vmovq_n_u8(2);
+    uint8x16_t c = vaddq_u8(a, b);
+    return 0;
+  }
+"
+)
+
 MACRO(CHECK_SSE lang type flags)
   SET(__FLAG_I 1)
   SET(CMAKE_REQUIRED_FLAGS_SAVE ${CMAKE_REQUIRED_FLAGS})
   FOREACH(__FLAG ${flags})
     IF(NOT ${lang}_${type}_FOUND)
-      SET(CMAKE_REQUIRED_FLAGS ${__FLAG})
+      separate_arguments(tested_flag UNIX_COMMAND ${__FLAG})
+      SET(CMAKE_REQUIRED_FLAGS ${tested_flag})
       CHECK_CXX_SOURCE_RUNS("${${type}_CODE}" ${lang}_HAS_${type}_${__FLAG_I})
       IF(${lang}_HAS_${type}_${__FLAG_I})
         SET(${lang}_${type}_FOUND
@@ -78,7 +93,7 @@ MACRO(CHECK_SSE lang type flags)
             CACHE BOOL "${lang} ${type} support"
         )
         SET(${lang}_${type}_FLAGS
-            "${__FLAG}"
+            ${tested_flag}
             CACHE STRING "${lang} ${type} flags"
         )
       ENDIF()
@@ -108,3 +123,4 @@ ENDMACRO()
 CHECK_SSE(CXX "AVX" " ;-mavx;/arch:AVX")
 CHECK_SSE(CXX "AVX2" " ;-mavx2 -mfma;/arch:AVX2")
 CHECK_SSE(CXX "AVX512" " ;-mavx512f -mavx512dq -mavx512vl -mavx512bw -mfma;/arch:AVX512")
+CHECK_SSE(CXX "NEON" " ;-mfpu=neon")

@@ -99,16 +99,16 @@ MACRO(CHECK_SSE lang type flags)
   SET(CMAKE_REQUIRED_FLAGS_SAVE ${CMAKE_REQUIRED_FLAGS})
   FOREACH(__FLAG ${flags})
     IF(NOT ${lang}_${type}_FOUND)
-      separate_arguments(tested_flag UNIX_COMMAND ${__FLAG})
-      SET(CMAKE_REQUIRED_FLAGS ${tested_flag})
+      SET(CMAKE_REQUIRED_FLAGS ${__FLAG})
       CHECK_CXX_SOURCE_RUNS("${${type}_CODE}" ${lang}_HAS_${type}_${__FLAG_I})
       IF(${lang}_HAS_${type}_${__FLAG_I})
         SET(${lang}_${type}_FOUND
             TRUE
             CACHE BOOL "${lang} ${type} support"
         )
+        separate_arguments(__SEPARATED_FLAG UNIX_COMMAND ${__FLAG})
         SET(${lang}_${type}_FLAGS
-            ${tested_flag}
+            ${__SEPARATED_FLAG}
             CACHE STRING "${lang} ${type} flags"
         )
       ENDIF()

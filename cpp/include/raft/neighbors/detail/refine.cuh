@@ -36,12 +36,12 @@
 namespace raft::neighbors::detail {
 
 /** Checks whether the input data extents are compatible. */
-template <typename extents_t>
-void check_input(extents_t dataset,
-                 extents_t queries,
-                 extents_t candidates,
-                 extents_t indices,
-                 extents_t distances,
+template <typename ExtentsT>
+void check_input(ExtentsT dataset,
+                 ExtentsT queries,
+                 ExtentsT candidates,
+                 ExtentsT indices,
+                 ExtentsT distances,
                  distance::DistanceType metric)
 {
   auto n_queries = queries.extent(0);
@@ -75,19 +75,19 @@ void check_input(extents_t dataset,
 /**
  * See raft::neighbors::refine for docs.
  */
-template <typename idx_t, typename data_t, typename distance_t, typename matrix_idx>
+template <typename IdxT, typename DataT, typename DistanceT, typename ExtentsT>
 void refine_device(raft::resources const& handle,
-                   raft::device_matrix_view<const data_t, matrix_idx, row_major> dataset,
-                   raft::device_matrix_view<const data_t, matrix_idx, row_major> queries,
-                   raft::device_matrix_view<const idx_t, matrix_idx, row_major> neighbor_candidates,
-                   raft::device_matrix_view<idx_t, matrix_idx, row_major> indices,
-                   raft::device_matrix_view<distance_t, matrix_idx, row_major> distances,
+                   raft::device_matrix_view<const DataT, ExtentsT, row_major> dataset,
+                   raft::device_matrix_view<const DataT, ExtentsT, row_major> queries,
+                   raft::device_matrix_view<const IdxT, ExtentsT, row_major> neighbor_candidates,
+                   raft::device_matrix_view<IdxT, ExtentsT, row_major> indices,
+                   raft::device_matrix_view<DistanceT, ExtentsT, row_major> distances,
                    distance::DistanceType metric = distance::DistanceType::L2Unexpanded)
 {
-  matrix_idx n_candidates = neighbor_candidates.extent(1);
-  matrix_idx n_queries    = queries.extent(0);
-  matrix_idx dim          = dataset.extent(1);
-  uint32_t k              = static_cast<uint32_t>(indices.extent(1));
+  ExtentsT n_candidates = neighbor_candidates.extent(1);
+  ExtentsT n_queries    = queries.extent(0);
+  ExtentsT dim          = dataset.extent(1);
+  auto k                = static_cast<uint32_t>(indices.extent(1));
 
   common::nvtx::range<common::nvtx::domain::raft> fun_scope(
     "neighbors::refine(%zu, %u)", size_t(n_queries), uint32_t(n_candidates));
@@ -112,7 +112,7 @@ void refine_device(raft::resources const& handle,
                    fake_coarse_idx.data(),
                    fake_coarse_idx.data() + n_queries);
 
-  raft::neighbors::ivf_flat::index<data_t, idx_t> refinement_index(
+  raft::neighbors::ivf_flat::index<DataT, IdxT> refinement_index(
     handle, metric, n_queries, false, true, dim);
 
   raft::neighbors::ivf_flat::detail::fill_refinement_index(handle,
@@ -123,51 +123,109 @@ void refine_device(raft::resources const& handle,
                                                            n_candidates);
   uint32_t grid_dim_x = 1;
   raft::neighbors::ivf_flat::detail::ivfflat_interleaved_scan<
-    data_t,
-    typename raft::spatial::knn::detail::utils::config<data_t>::value_t,
-    idx_t>(refinement_index,
-           queries.data_handle(),
-           fake_coarse_idx.data(),
-           static_cast<uint32_t>(n_queries),
-           refinement_index.metric(),
-           1,
-           k,
-           raft::distance::is_min_close(metric),
-           indices.data_handle(),
-           distances.data_handle(),
-           grid_dim_x,
-           resource::get_cuda_stream(handle));
+    DataT,
+    typename raft::spatial::knn::detail::utils::config<DataT>::value_t,
+    IdxT>(refinement_index,
+          queries.data_handle(),
+          fake_coarse_idx.data(),
+          static_cast<uint32_t>(n_queries),
+          refinement_index.metric(),
+          1,
+          k,
+          raft::distance::is_min_close(metric),
+          indices.data_handle(),
+          distances.data_handle(),
+          grid_dim_x,
+          resource::get_cuda_stream(handle));
 }
 
-/** Helper structure for naive CPU implementation of refine. */
-typedef struct {
-  uint64_t id;
-  float distance;
-} struct_for_refinement;
-
-inline int _postprocessing_qsort_compare(const void* v1, const void* v2)
+template <typename DC, typename IdxT, typename DataT, typename DistanceT, typename ExtentsT>
+[[gnu::optimize(3), gnu::optimize("tree-vectorize")]] void refine_host_impl(
+  raft::host_matrix_view<const DataT, ExtentsT, row_major> dataset,
+  raft::host_matrix_view<const DataT, ExtentsT, row_major> queries,
+  raft::host_matrix_view<const IdxT, ExtentsT, row_major> neighbor_candidates,
+  raft::host_matrix_view<IdxT, ExtentsT, row_major> indices,
+  raft::host_matrix_view<DistanceT, ExtentsT, row_major> distances)
 {
-  // sort in ascending order
-  if (((struct_for_refinement*)v1)->distance > ((struct_for_refinement*)v2)->distance) {
-    return 1;
-  } else if (((struct_for_refinement*)v1)->distance < ((struct_for_refinement*)v2)->distance) {
-    return -1;
-  } else {
-    return 0;
+  size_t n_queries = queries.extent(0);
+  size_t dim       = dataset.extent(1);
+  size_t orig_k    = neighbor_candidates.extent(1);
+  size_t refined_k = indices.extent(1);
+
+  common::nvtx::range<common::nvtx::domain::raft> fun_scope(
+    "neighbors::refine_host(%zu, %zu -> %zu)", n_queries, orig_k, refined_k);
+
+  auto suggested_n_threads = std::max(1, std::min(omp_get_num_procs() / 2, omp_get_max_threads()));
+  if (size_t(suggested_n_threads) * 2 > n_queries) {
+    suggested_n_threads = div_rounding_up_unsafe<size_t>(n_queries, 2);
+  }
+
+#pragma omp parallel num_threads(suggested_n_threads)
+  {
+    std::vector<std::tuple<DistanceT, IdxT>> refined_pairs(orig_k);
+    for (size_t i = omp_get_thread_num(); i < n_queries; i += omp_get_num_threads()) {
+      // Compute the refined distance using original dataset vectors
+      const DataT* query = queries.data_handle() + dim * i;
+      for (size_t j = 0; j < orig_k; j++) {
+        IdxT id            = neighbor_candidates(i, j);
+        const DataT* row   = dataset.data_handle() + dim * id;
+        DistanceT distance = 0.0;
+        for (size_t k = 0; k < dim; k++) {
+          distance += DC::template eval<DistanceT>(query[k], row[k]);
+        }
+        refined_pairs[j] = std::make_tuple(distance, id);
+      }
+      // Sort the query neigbors by their refined distances
+      std::sort(refined_pairs.begin(), refined_pairs.end());
+      // Store forst refined_k neighbors
+      for (size_t j = 0; j < refined_k; j++) {
+        indices(i, j) = std::get<1>(refined_pairs[j]);
+        if (distances.data_handle() != nullptr) {
+          distances(i, j) = DC::template postprocess(std::get<0>(refined_pairs[j]));
+        }
+      }
+    }
   }
 }
+
+struct distance_comp_l2 {
+  template <typename DistanceT>
+  static inline auto eval(const DistanceT& a, const DistanceT& b) -> DistanceT
+  {
+    auto d = a - b;
+    return d * d;
+  }
+  template <typename DistanceT>
+  static inline auto postprocess(const DistanceT& a) -> DistanceT
+  {
+    return a;
+  }
+};
+
+struct distance_comp_inner {
+  template <typename DistanceT>
+  static inline auto eval(const DistanceT& a, const DistanceT& b) -> DistanceT
+  {
+    return -a * b;
+  }
+  template <typename DistanceT>
+  static inline auto postprocess(const DistanceT& a) -> DistanceT
+  {
+    return -a;
+  }
+};
 
 /**
  * Naive CPU implementation of refine operation
  *
  * All pointers are expected to be accessible on the host.
  */
-template <typename idx_t, typename data_t, typename distance_t, typename matrix_idx>
-void refine_host(raft::host_matrix_view<const data_t, matrix_idx, row_major> dataset,
-                 raft::host_matrix_view<const data_t, matrix_idx, row_major> queries,
-                 raft::host_matrix_view<const idx_t, matrix_idx, row_major> neighbor_candidates,
-                 raft::host_matrix_view<idx_t, matrix_idx, row_major> indices,
-                 raft::host_matrix_view<distance_t, matrix_idx, row_major> distances,
+template <typename IdxT, typename DataT, typename DistanceT, typename ExtentsT>
+void refine_host(raft::host_matrix_view<const DataT, ExtentsT, row_major> dataset,
+                 raft::host_matrix_view<const DataT, ExtentsT, row_major> queries,
+                 raft::host_matrix_view<const IdxT, ExtentsT, row_major> neighbor_candidates,
+                 raft::host_matrix_view<IdxT, ExtentsT, row_major> indices,
+                 raft::host_matrix_view<DistanceT, ExtentsT, row_major> distances,
                  distance::DistanceType metric = distance::DistanceType::L2Unexpanded)
 {
   check_input(dataset.extents(),
@@ -178,62 +236,13 @@ void refine_host(raft::host_matrix_view<const data_t, matrix_idx, row_major> dat
               metric);
 
   switch (metric) {
-    case raft::distance::DistanceType::L2Expanded: break;
-    case raft::distance::DistanceType::InnerProduct: break;
-    default: throw raft::logic_error("Unsopported metric");
-  }
-
-  size_t numDataset            = dataset.extent(0);
-  size_t numQueries            = queries.extent(0);
-  size_t dimDataset            = dataset.extent(1);
-  const data_t* dataset_ptr    = dataset.data_handle();
-  const data_t* queries_ptr    = queries.data_handle();
-  const idx_t* neighbors       = neighbor_candidates.data_handle();
-  idx_t topK                   = neighbor_candidates.extent(1);
-  idx_t refinedTopK            = indices.extent(1);
-  idx_t* refinedNeighbors      = indices.data_handle();
-  distance_t* refinedDistances = distances.data_handle();
-
-  common::nvtx::range<common::nvtx::domain::raft> fun_scope(
-    "neighbors::refine_host(%zu, %u)", size_t(numQueries), uint32_t(topK));
-
-#pragma omp parallel
-  {
-    struct_for_refinement* sfr =
-      (struct_for_refinement*)malloc(sizeof(struct_for_refinement) * topK);
-    for (size_t i = omp_get_thread_num(); i < numQueries; i += omp_get_num_threads()) {
-      // compute distance with original dataset vectors
-      const data_t* cur_query = queries_ptr + ((uint64_t)dimDataset * i);
-      for (size_t j = 0; j < (size_t)topK; j++) {
-        idx_t id                  = neighbors[j + (topK * i)];
-        const data_t* cur_dataset = dataset_ptr + ((uint64_t)dimDataset * id);
-        float distance            = 0.0;
-        for (size_t k = 0; k < (size_t)dimDataset; k++) {
-          float val_q = (float)(cur_query[k]);
-          float val_d = (float)(cur_dataset[k]);
-          if (metric == raft::distance::DistanceType::InnerProduct) {
-            distance += -val_q * val_d;  // Negate because we sort in ascending order.
-          } else {
-            distance += (val_q - val_d) * (val_q - val_d);
-          }
-        }
-        sfr[j].id       = id;
-        sfr[j].distance = distance;
-      }
-
-      qsort(sfr, topK, sizeof(struct_for_refinement), _postprocessing_qsort_compare);
-
-      for (size_t j = 0; j < (size_t)refinedTopK; j++) {
-        refinedNeighbors[j + (refinedTopK * i)] = sfr[j].id;
-        if (refinedDistances == NULL) continue;
-        if (metric == raft::distance::DistanceType::InnerProduct) {
-          refinedDistances[j + (refinedTopK * i)] = -sfr[j].distance;
-        } else {
-          refinedDistances[j + (refinedTopK * i)] = sfr[j].distance;
-        }
-      }
-    }
-    free(sfr);
+    case raft::distance::DistanceType::L2Expanded:
+      return refine_host_impl<distance_comp_l2>(
+        dataset, queries, neighbor_candidates, indices, distances);
+    case raft::distance::DistanceType::InnerProduct:
+      return refine_host_impl<distance_comp_inner>(
+        dataset, queries, neighbor_candidates, indices, distances);
+    default: throw raft::logic_error("Unsupported metric");
   }
 }
 

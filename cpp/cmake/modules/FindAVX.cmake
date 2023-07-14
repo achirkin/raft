@@ -65,19 +65,34 @@ SET(AVX2_CODE
 "
 )
 
-SET(NEON_CODE
-    "
-  #include <arm_neon.h>
+SET(NEON_CODE "
+#include <arm_neon.h>
 
-  int main()
-  {
-    uint8x16_t a = vmovq_n_u8(1);
-    uint8x16_t b = vmovq_n_u8(2);
-    uint8x16_t c = vaddq_u8(a, b);
-    return 0;
-  }
-"
-)
+int main()
+{
+  uint8x16_t a = vmovq_n_u8(1);
+  uint8x16_t b = vmovq_n_u8(2);
+  uint8x16_t c = vaddq_u8(a, b);
+  return 0;
+}
+")
+
+SET(SVE_CODE "
+#include <arm_sve.h>
+
+#ifndef SVE_BITS
+#define SVE_BITS __ARM_FEATURE_SVE_BITS
+#endif
+
+int main()
+{
+    __attribute__((arm_sve_vector_bits(__ARM_FEATURE_SVE_BITS))) svbool_t p = svptrue_b32();
+    __attribute__((arm_sve_vector_bits(SVE_BITS))) svfloat32_t a = svdup_f32(1.0f);
+    svfloat32_t b = svdup_f32(2.0f);
+    svfloat32_t c = svadd_f32_z(p, a, b);
+    return sizeof(a)*8 != __ARM_FEATURE_SVE_BITS;
+}
+")
 
 MACRO(CHECK_SSE lang type flags)
   SET(__FLAG_I 1)
@@ -124,3 +139,7 @@ CHECK_SSE(CXX "AVX" " ;-mavx;/arch:AVX")
 CHECK_SSE(CXX "AVX2" " ;-mavx2 -mfma;/arch:AVX2")
 CHECK_SSE(CXX "AVX512" " ;-mavx512f -mavx512dq -mavx512vl -mavx512bw -mfma;/arch:AVX512")
 CHECK_SSE(CXX "NEON" " ;-mfpu=neon")
+CHECK_SSE(CXX "SVE" "\
+ ;\
+ -march=armv9-a+sve -msve-vector-bits=2048;-march=armv9-a+sve -msve-vector-bits=1024;-march=armv9-a+sve -msve-vector-bits=512;\
+ -march=armv8.6-a+sve -msve-vector-bits=2048;-march=armv8.6-a+sve -msve-vector-bits=1024;-march=armv8.6-a+sve -msve-vector-bits=512")

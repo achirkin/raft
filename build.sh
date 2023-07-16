@@ -14,6 +14,65 @@ set -e
 NUMARGS=$#
 ARGS=$*
 
+MY_BUILD_TYPE=RelWithDebInfo
+MY_DEBUG_LEVEL=4
+
+# MY_DEFAULT_ARGS="tests --limit-tests=UTILS_TEST;CORE_TEST"
+# MY_DEFAULT_ARGS_NUM=2
+
+# MY_DEFAULT_ARGS="--compile-libs pylibraft libraft tests --limit-tests=UTILS_TEST;CORE_TEST raft-dask"
+# MY_DEFAULT_ARGS_NUM=6
+
+# MY_DEFAULT_ARGS="--compile-lib pylibraft libraft"
+# MY_DEFAULT_ARGS_NUM=3
+
+# MY_DEFAULT_ARGS="-n tests --limit-tests=NEIGHBORS_TEST bench-prims --limit-bench-prims=NEIGHBORS_BENCH bench-ann --limit-bench-ann=RAFT_IVF_PQ_ANN_BENCH"
+# MY_DEFAULT_ARGS_NUM=5
+
+MY_DEFAULT_ARGS="-n --compile-lib bench-prims --limit-bench-prims=NEIGHBORS_BENCH tests --limit-tests=NEIGHBORS_TEST"
+MY_DEFAULT_ARGS_NUM=6
+
+# MY_DEFAULT_ARGS="-n --compile-lib tests --limit-tests=NEIGHBORS_TEST"
+# MY_DEFAULT_ARGS_NUM=4
+
+# MY_DEFAULT_ARGS="-n --compile-lib bench-prims --limit-bench-prims=NEIGHBORS_BENCH bench-ann --limit-bench-ann=RAFT_IVF_PQ_ANN_BENCH;HNSWLIB_ANN_BENCH"
+# MY_DEFAULT_ARGS_NUM=6
+
+# MY_DEFAULT_ARGS="-n --compile-lib tests --limit-tests=UTILS_TEST;CORE_TEST;NEIGHBORS_TEST"
+# MY_DEFAULT_ARGS_NUM=4
+
+# MY_DEFAULT_ARGS="-n --compile-lib bench-prims --limit-bench-prims=EXAMPLE_RAFT"
+# MY_DEFAULT_ARGS_NUM=4
+
+# MY_DEFAULT_ARGS="-n --compile-lib bench-prims --limit-bench-prims=EXAMPLE_RAFT"
+# MY_DEFAULT_ARGS_NUM=4
+
+# MY_DEFAULT_ARGS="-n tests --limit-tests=MATRIX_TEST;UTILS_TEST;NEIGHBORS_TEST bench --limit-bench=MATRIX_BENCH;NEIGHBORS_BENCH"
+# MY_DEFAULT_ARGS_NUM=5
+
+# MY_DEFAULT_ARGS="-n bench-prims"
+# MY_DEFAULT_ARGS_NUM=2
+
+# export CUDAARCHS=90
+export CFLAGS="-DRAFT_ACTIVE_LEVEL=${MY_DEBUG_LEVEL}"
+export CXXFLAGS="-DRAFT_ACTIVE_LEVEL=${MY_DEBUG_LEVEL}"
+export CUDAFLAGS="-DRAFT_ACTIVE_LEVEL=${MY_DEBUG_LEVEL}"
+
+MY_ENABLE_LINEINFO=OFF
+if [[ ${MY_BUILD_TYPE} != "Debug" ]]; then
+    MY_ENABLE_LINEINFO=ON
+fi
+
+MY_EXTRA_ARGS="--cache-tool=ccache --cmake-args=\"-DCMAKE_BUILD_TYPE=${MY_BUILD_TYPE} -DCUDA_ENABLE_LINEINFO=${MY_ENABLE_LINEINFO}\""
+MY_EXTRA_ARGS_NUM=2
+if (( ${NUMARGS} != 0 )); then
+  ARGS=${ARGS}" ${MY_EXTRA_ARGS}"
+  NUMARGS=$(( $NUMARGS + $MY_EXTRA_ARGS_NUM ))
+else
+  ARGS="${MY_DEFAULT_ARGS} ${MY_EXTRA_ARGS}"
+  NUMARGS=$(( $MY_DEFAULT_ARGS_NUM + $MY_EXTRA_ARGS_NUM ))
+fi
+
 # NOTE: ensure all dir changes are relative to the location of this
 # scripts, and that this script resides in the repo dir!
 REPODIR=$(cd $(dirname $0); pwd)

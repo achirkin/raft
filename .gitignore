@@ -60,3 +60,16 @@ _xml
 # sphinx
 _html
 _text
+
+# my
+conda/environments
+result
+.gitignore
+build.sh
+cpp/bench/ann/conf
+*_index
+index
+*.nsys-rep
+*.sqlite
+*.ncu-rep
+rmm_log.txt

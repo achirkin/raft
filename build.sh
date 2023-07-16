@@ -14,7 +14,7 @@ set -e
 NUMARGS=$#
 ARGS=$*
 
-MY_BUILD_TYPE=RelWithDebInfo
+MY_BUILD_TYPE=Release
 MY_DEBUG_LEVEL=4
 
 # MY_DEFAULT_ARGS="tests --limit-tests=UTILS_TEST;CORE_TEST"

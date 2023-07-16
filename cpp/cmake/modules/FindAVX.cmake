@@ -141,8 +141,8 @@ CHECK_SSE(CXX "AVX512" " ;-mavx512f -mavx512dq -mavx512vl -mavx512bw -mfma;/arch
 CHECK_SSE(CXX "NEON" " ;-mfpu=neon")
 CHECK_SSE(CXX "SVE" "\
  ;\
- -march=armv9-a+sve2 -msve-vector-bits=scalable;\
  -mcpu=neoverse-512tvb;\
+ -march=armv9-a+sve2 -msve-vector-bits=scalable;\
  -march=armv8.5-a+sve2 -msve-vector-bits=scalable")
 # The following potentially would give better performance, but GCC generates bad code resulting in misaligned memory reads (bus error or segfault)
 # -march=armv9-a+sve -msve-vector-bits=2048;-march=armv9-a+sve -msve-vector-bits=1024;-march=armv9-a+sve -msve-vector-bits=512;\

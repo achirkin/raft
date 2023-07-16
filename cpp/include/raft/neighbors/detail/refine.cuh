@@ -155,10 +155,8 @@ template <typename DC, typename IdxT, typename DataT, typename DistanceT, typena
   common::nvtx::range<common::nvtx::domain::raft> fun_scope(
     "neighbors::refine_host(%zu, %zu -> %zu)", n_queries, orig_k, refined_k);
 
-  auto suggested_n_threads = std::max(1, std::min(omp_get_num_procs() / 2, omp_get_max_threads()));
-  if (size_t(suggested_n_threads) * 2 > n_queries) {
-    suggested_n_threads = div_rounding_up_unsafe<size_t>(n_queries, 2);
-  }
+  auto suggested_n_threads = std::max(1, std::min(omp_get_num_procs(), omp_get_max_threads()));
+  if (size_t(suggested_n_threads) > n_queries) { suggested_n_threads = n_queries; }
 
 #pragma omp parallel num_threads(suggested_n_threads)
   {
@@ -221,12 +219,13 @@ struct distance_comp_inner {
  * All pointers are expected to be accessible on the host.
  */
 template <typename IdxT, typename DataT, typename DistanceT, typename ExtentsT>
-void refine_host(raft::host_matrix_view<const DataT, ExtentsT, row_major> dataset,
-                 raft::host_matrix_view<const DataT, ExtentsT, row_major> queries,
-                 raft::host_matrix_view<const IdxT, ExtentsT, row_major> neighbor_candidates,
-                 raft::host_matrix_view<IdxT, ExtentsT, row_major> indices,
-                 raft::host_matrix_view<DistanceT, ExtentsT, row_major> distances,
-                 distance::DistanceType metric = distance::DistanceType::L2Unexpanded)
+[[gnu::optimize(3), gnu::optimize("tree-vectorize")]] void refine_host(
+  raft::host_matrix_view<const DataT, ExtentsT, row_major> dataset,
+  raft::host_matrix_view<const DataT, ExtentsT, row_major> queries,
+  raft::host_matrix_view<const IdxT, ExtentsT, row_major> neighbor_candidates,
+  raft::host_matrix_view<IdxT, ExtentsT, row_major> indices,
+  raft::host_matrix_view<DistanceT, ExtentsT, row_major> distances,
+  distance::DistanceType metric = distance::DistanceType::L2Unexpanded)
 {
   check_input(dataset.extents(),
               queries.extents(),

@@ -80,17 +80,17 @@ int main()
 SET(SVE_CODE "
 #include <arm_sve.h>
 
-#ifndef SVE_BITS
-#define SVE_BITS __ARM_FEATURE_SVE_BITS
-#endif
-
 int main()
 {
     __attribute__((arm_sve_vector_bits(__ARM_FEATURE_SVE_BITS))) svbool_t p = svptrue_b32();
-    __attribute__((arm_sve_vector_bits(SVE_BITS))) svfloat32_t a = svdup_f32(1.0f);
+    __attribute__((arm_sve_vector_bits(__ARM_FEATURE_SVE_BITS))) svfloat32_t a = svdup_f32(1.0f);
     svfloat32_t b = svdup_f32(2.0f);
     svfloat32_t c = svadd_f32_z(p, a, b);
-    return sizeof(a)*8 != __ARM_FEATURE_SVE_BITS;
+#ifdef SVE_BITS
+    return sizeof(a)*8 != SVE_BITS;
+#else
+    return 0;
+#endif
 }
 ")
 
@@ -141,5 +141,9 @@ CHECK_SSE(CXX "AVX512" " ;-mavx512f -mavx512dq -mavx512vl -mavx512bw -mfma;/arch
 CHECK_SSE(CXX "NEON" " ;-mfpu=neon")
 CHECK_SSE(CXX "SVE" "\
  ;\
- -march=armv9-a+sve -msve-vector-bits=2048;-march=armv9-a+sve -msve-vector-bits=1024;-march=armv9-a+sve -msve-vector-bits=512;\
- -march=armv8.6-a+sve -msve-vector-bits=2048;-march=armv8.6-a+sve -msve-vector-bits=1024;-march=armv8.6-a+sve -msve-vector-bits=512")
+ -march=armv9-a+sve2 -msve-vector-bits=scalable;\
+ -mcpu=neoverse-512tvb;\
+ -march=armv8.5-a+sve2 -msve-vector-bits=scalable")
+# The following potentially would give better performance, but GCC generates bad code resulting in misaligned memory reads (bus error or segfault)
+# -march=armv9-a+sve -msve-vector-bits=2048;-march=armv9-a+sve -msve-vector-bits=1024;-march=armv9-a+sve -msve-vector-bits=512;\
+# -march=armv8.5-a+sve -msve-vector-bits=2048;-march=armv8.5-a+sve -msve-vector-bits=1024;-march=armv8.5-a+sve -msve-vector-bits=512")

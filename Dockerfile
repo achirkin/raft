@@ -41,7 +41,7 @@ RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 30 ; \
     update-alternatives --install /usr/bin/cc cc /usr/bin/gcc 30 ; \
     update-alternatives --set cc /usr/bin/gcc ; \
     update-alternatives --install /usr/bin/c++ c++ /usr/bin/g++ 30 ; \
-    update-alternatives --set c++ /usr/bin/g++ ; \
+    update-alternatives --set c++ /usr/bin/g++
 
 ### Install cmake
 RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | sudo tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null

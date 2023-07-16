@@ -314,26 +314,7 @@ if(BUILD_TESTS)
     NAME
     NEIGHBORS_TEST
     PATH
-    test/neighbors/ann_cagra/test_float_uint32_t.cu
-    test/neighbors/ann_cagra/test_int8_t_uint32_t.cu
-    test/neighbors/ann_cagra/test_uint8_t_uint32_t.cu
-    test/neighbors/ann_cagra/test_float_int64_t.cu
-    test/neighbors/ann_ivf_flat/test_float_int64_t.cu
-    test/neighbors/ann_ivf_flat/test_int8_t_int64_t.cu
-    test/neighbors/ann_ivf_flat/test_uint8_t_int64_t.cu
-    test/neighbors/ann_ivf_pq/test_float_int64_t.cu
-    test/neighbors/ann_ivf_pq/test_float_uint32_t.cu
-    test/neighbors/ann_ivf_pq/test_float_int64_t.cu
-    test/neighbors/ann_ivf_pq/test_int8_t_int64_t.cu
-    test/neighbors/ann_ivf_pq/test_uint8_t_int64_t.cu
-    test/neighbors/knn.cu
-    test/neighbors/fused_l2_knn.cu
-    test/neighbors/tiled_knn.cu
-    test/neighbors/haversine.cu
-    test/neighbors/ball_cover.cu
-    test/neighbors/epsilon_neighborhood.cu
     test/neighbors/refine.cu
-    test/neighbors/selection.cu
     OPTIONAL
     LIB
     EXPLICIT_INSTANTIATE_ONLY

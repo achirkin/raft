@@ -1,0 +1,106 @@
+/*
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#pragma once
+
+#include <raft/core/device_mdarray.hpp>
+#include <raft/core/host_mdspan.hpp>
+#include <raft/core/nvtx.hpp>
+#include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/thrust_policy.hpp>
+#include <raft/core/resources.hpp>
+#include <raft/matrix/detail/select_warpsort.cuh>
+#include <raft/neighbors/detail/ivf_flat_build.cuh>
+#include <raft/neighbors/detail/ivf_flat_interleaved_scan.cuh>
+#include <raft/neighbors/detail/refine_common.hpp>
+#include <raft/spatial/knn/detail/ann_utils.cuh>
+
+#include <thrust/sequence.h>
+
+namespace raft::neighbors::detail {
+
+/**
+ * See raft::neighbors::refine for docs.
+ */
+template <typename IdxT, typename DataT, typename DistanceT, typename ExtentsT>
+void refine_device(raft::resources const& handle,
+                   raft::device_matrix_view<const DataT, ExtentsT, row_major> dataset,
+                   raft::device_matrix_view<const DataT, ExtentsT, row_major> queries,
+                   raft::device_matrix_view<const IdxT, ExtentsT, row_major> neighbor_candidates,
+                   raft::device_matrix_view<IdxT, ExtentsT, row_major> indices,
+                   raft::device_matrix_view<DistanceT, ExtentsT, row_major> distances,
+                   distance::DistanceType metric = distance::DistanceType::L2Unexpanded)
+{
+  ExtentsT n_candidates = neighbor_candidates.extent(1);
+  ExtentsT n_queries    = queries.extent(0);
+  ExtentsT dim          = dataset.extent(1);
+  auto k                = static_cast<uint32_t>(indices.extent(1));
+
+  RAFT_EXPECTS(k <= raft::matrix::detail::select::warpsort::kMaxCapacity,
+               "k must be lest than topk::kMaxCapacity (%d).",
+               raft::matrix::detail::select::warpsort::kMaxCapacity);
+
+  common::nvtx::range<common::nvtx::domain::raft> fun_scope(
+    "neighbors::refine(%zu, %u)", size_t(n_queries), uint32_t(n_candidates));
+
+  refine_check_input(dataset.extents(),
+                     queries.extents(),
+                     neighbor_candidates.extents(),
+                     indices.extents(),
+                     distances.extents(),
+                     metric);
+
+  // The refinement search can be mapped to an IVF flat search:
+  // - We consider that the candidate vectors form a cluster, separately for each query.
+  // - In other words, the n_queries * n_candidates vectors form n_queries clusters, each with
+  //   n_candidates elements.
+  // - We consider that the coarse level search is already performed and assigned a single cluster
+  //   to search for each query (the cluster formed from the corresponding candidates).
+  // - We run IVF flat search with n_probes=1 to select the best k elements of the candidates.
+  rmm::device_uvector<uint32_t> fake_coarse_idx(n_queries, resource::get_cuda_stream(handle));
+
+  thrust::sequence(resource::get_thrust_policy(handle),
+                   fake_coarse_idx.data(),
+                   fake_coarse_idx.data() + n_queries);
+
+  raft::neighbors::ivf_flat::index<DataT, IdxT> refinement_index(
+    handle, metric, n_queries, false, true, dim);
+
+  raft::neighbors::ivf_flat::detail::fill_refinement_index(handle,
+                                                           &refinement_index,
+                                                           dataset.data_handle(),
+                                                           neighbor_candidates.data_handle(),
+                                                           n_queries,
+                                                           n_candidates);
+  uint32_t grid_dim_x = 1;
+  raft::neighbors::ivf_flat::detail::ivfflat_interleaved_scan<
+    DataT,
+    typename raft::spatial::knn::detail::utils::config<DataT>::value_t,
+    IdxT>(refinement_index,
+          queries.data_handle(),
+          fake_coarse_idx.data(),
+          static_cast<uint32_t>(n_queries),
+          refinement_index.metric(),
+          1,
+          k,
+          raft::distance::is_min_close(metric),
+          indices.data_handle(),
+          distances.data_handle(),
+          grid_dim_x,
+          resource::get_cuda_stream(handle));
+}
+
+}  // namespace raft::neighbors::detail

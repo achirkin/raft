@@ -1114,37 +1114,130 @@ struct compute_similarity {
         continue;
       }
 
-      // First, we set the carveout hint to the preferred value. The driver will increase this if
-      // needed to run at least one block per SM. At the same time, if more blocks fit into one SM,
-      // this carveout value will limit the calculated occupancy. When we're done selecting the best
-      // launch configuration, we will tighten the carveout once more, based on the final memory
-      // usage and occupancy.
-      const int max_carveout =
-        estimate_carveout(preferred_shmem_carveout, smem_size_const, dev_props);
-      RAFT_CUDA_TRY(
-        cudaFuncSetAttribute(kernel, cudaFuncAttributePreferredSharedMemoryCarveout, max_carveout));
+      /* Note: FASTER KERNEL SCHEDULING
+
+      The `select` function contains a rather heavy logic that chooses the scheduling parameters and
+      tweaks the kernel config. This works fine for all but the smallest work sizes (n_queries *
+      n_probes).
+
+      However, for very small work sizes (e.g. n_queries == 1), the time spent on scheduling can be
+      larger than the execution time of the similarity kernel. The biggest impact comes from the
+      cudaFuncSetAttribute calls, which increase the maximum available shmem. Moreover, these change
+      the carveout setting, which adds extra gaps in the GPU timeline around the kernel call (the
+      driver sets the GPU state).
+
+      To overcome this problem, I try to be more conservative on calling cudaFuncSetAttribute here.
+      Unfortunately, in my experiments, the performance improvement is observed only for the
+      smallest work sizes (n_queries = 1, n_probes <= 10). In addition, statefullness of the
+      GPU/kernel configs makes things more complicated in benchmarks: the carveout setting is
+      preserved across runs. The current changeset then may hurt performance: if on the first
+      invocation of the kernel the carveout is increased, the algorithm may skip
+      cudaFuncSetAttribute on the second invocation; as a result, on the second run the kernel is
+      then launched with a wrong carveout setting (which could hurt L1 cache hit rate).
+
+      */
 
       // Get the theoretical maximum possible number of threads per block
       cudaFuncAttributes kernel_attrs;
       RAFT_CUDA_TRY(cudaFuncGetAttributes(&kernel_attrs, kernel));
-      uint32_t n_threads =
+
+      // Estimate the maximum number of blocks could run on the same SM if shmem was the only
+      // limiting factor (assuming n_threads is very small)
+      uint32_t max_blocks_per_sm =
+        dev_props.sharedMemPerMultiprocessor /
+        (smem_size_const + dev_props.reservedSharedMemPerBlock + kernel_attrs.sharedSizeBytes);
+      // RAFT_LOG_INFO(
+      //   "Kernel shmem footprint: \n\tsmem_size_const = %zu, sum = %zu, avail = %zu, "
+      //   "max_blocks_per_sm = %u",
+      //   smem_size_const,
+      //   smem_size_const + dev_props.reservedSharedMemPerBlock + kernel_attrs.sharedSizeBytes,
+      //   dev_props.sharedMemPerMultiprocessor,
+      //   max_blocks_per_sm);
+      max_blocks_per_sm =
+        std::min<uint32_t>(max_blocks_per_sm, dev_props.maxBlocksPerMultiProcessor);
+
+      const uint32_t n_threads_max =
         round_down_safe<uint32_t>(kernel_attrs.maxThreadsPerBlock, n_threads_gty);
+      uint32_t n_threads       = n_threads_max;
+      uint32_t n_blocks_per_sm = 1;
+      for (uint32_t nb = 2; nb < max_blocks_per_sm; nb++) {
+        auto n_threads_tmp =
+          round_down_safe<uint32_t>(dev_props.maxThreadsPerMultiProcessor / nb, n_threads_gty);
+        if (n_threads_tmp > n_threads) {
+          n_blocks_per_sm = nb;
+          continue;
+        }
+        if (n_threads_tmp < n_threads_min) { break; }
+        if (nb * n_threads_tmp >=
+            std::max<uint32_t>(dev_props.maxThreadsPerMultiProcessor * kTargetOccupancy,
+                               n_blocks_per_sm * n_threads)) {
+          n_threads       = n_threads_tmp;
+          n_blocks_per_sm = nb;
+          break;
+        }
+      }
+      double occupancy_bound =
+        double(n_threads * n_blocks_per_sm) / double(dev_props.maxThreadsPerMultiProcessor);
 
       // Actual required shmem depens on the number of threads
       size_t smem_size = max(smem_size_const, ltk_mem(n_threads));
 
-      // Make sure the kernel can get enough shmem.
-      cudaError_t cuda_status =
-        cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size);
-      if (cuda_status != cudaSuccess) {
-        RAFT_EXPECTS(
-          cuda_status == cudaGetLastError(),
-          "Tried to reset the expected cuda error code, but it didn't match the expectation");
-        // Failed to request enough shmem for the kernel. Skip the candidate.
-        continue;
-      }
-
+      // Check the occupancy
       occupancy_t cur(smem_size, n_threads, kernel, dev_props);
+      // If the occupancy is lower than we estimated, we're likely running into the memory carveout
+      // or optin issues.
+      // RAFT_LOG_INFO(
+      //   "Making kernel decision: \n\toccupancy_bound = %f, n_blocks_per_sm = %u, n_threads_max =
+      //   %u"
+      //   "\n\tcur.occupancy = %f, cur.blocks_per_sm = %u, n_threads = %u"
+      //   "\n\tn_blocks = %u, smem_size = %zu",
+      //   occupancy_bound,
+      //   n_blocks_per_sm,
+      //   n_threads_max,
+      //   cur.occupancy,
+      //   cur.blocks_per_sm,
+      //   n_threads,
+      //   n_blocks,
+      //   smem_size);
+      bool tweak_max_shmem =
+        // if the occupancy is too low due to default carveout constraints
+        (cur.occupancy < kTargetOccupancy && occupancy_bound >= kTargetOccupancy) ||
+        // if there's enough work and occupancy is somewhat low
+        (cur.occupancy < occupancy_bound &&
+         n_blocks <= dev_props.multiProcessorCount * n_blocks_per_sm * 2) ||
+        // if shmem opt-in is required to run this kernel
+        cur.blocks_per_sm <= 0;
+
+      // First, we set the carveout hint to the preferred value. The driver will increase this if
+      // needed to run at least one block per SM. At the same time, if more blocks fit into one
+      // SM, this carveout value will limit the calculated occupancy. When we're done selecting
+      // the best launch configuration, we will tighten the carveout once more, based on the final
+      // memory usage and occupancy.
+      const int max_carveout =
+        estimate_carveout(preferred_shmem_carveout, smem_size_const, dev_props);
+
+      if (tweak_max_shmem) {
+        RAFT_CUDA_TRY(cudaFuncSetAttribute(
+          kernel, cudaFuncAttributePreferredSharedMemoryCarveout, max_carveout));
+        // Make sure the kernel can get enough shmem.
+        cudaError_t cuda_status =
+          cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size);
+        if (cuda_status != cudaSuccess) {
+          RAFT_EXPECTS(
+            cuda_status == cudaGetLastError(),
+            "Tried to reset the expected cuda error code, but it didn't match the expectation");
+          // Failed to request enough shmem for the kernel. Skip the candidate.
+          continue;
+        }
+
+        cur = occupancy_t(smem_size, n_threads, kernel, dev_props);
+        // RAFT_LOG_INFO(
+        //   "Occupancy after carveout (%d%):"
+        //   "\n\tcur.occupancy = %f, cur.blocks_per_sm = %u",
+        //   max_carveout,
+        //   cur.occupancy,
+        //   cur.blocks_per_sm);
+      }
       if (cur.blocks_per_sm <= 0) {
         // For some reason, we still cannot make this kernel run. Skip the candidate.
         continue;
@@ -1153,10 +1246,10 @@ struct compute_similarity {
       {
         // Try to reduce the number of threads to increase occupancy and data locality
         auto n_threads_tmp = n_threads_min;
-        while (n_threads_tmp * 2 < n_threads) {
+        while (n_threads_tmp * 2 < n_threads_max) {
           n_threads_tmp *= 2;
         }
-        if (n_threads_tmp < n_threads) {
+        if (n_threads_tmp < n_threads_max) {
           while (n_threads_tmp >= n_threads_min) {
             auto smem_size_tmp = max(smem_size_const, ltk_mem(n_threads_tmp));
             occupancy_t tmp(smem_size_tmp, n_threads_tmp, kernel, dev_props);
@@ -1212,12 +1305,14 @@ struct compute_similarity {
                                smem_size,
                                size_t(n_blocks_min) * size_t(pq_dim << pq_bits)};
           }
-          // Actual shmem/L1 split wildly rounds up the specified preferred carveout, so we set here
-          // a rather conservative bar; most likely, the kernel gets more shared memory than this,
-          // and the occupancy doesn't get hurt.
-          auto carveout = std::min<int>(max_carveout, std::ceil(100.0 * cur.shmem_use));
-          RAFT_CUDA_TRY(
-            cudaFuncSetAttribute(kernel, cudaFuncAttributePreferredSharedMemoryCarveout, carveout));
+          if (tweak_max_shmem) {
+            // Actual shmem/L1 split wildly rounds up the specified preferred carveout, so we set
+            // here a rather conservative bar; most likely, the kernel gets more shared memory than
+            // this, and the occupancy doesn't get hurt.
+            auto carveout = std::min<int>(max_carveout, std::ceil(100.0 * cur.shmem_use));
+            RAFT_CUDA_TRY(cudaFuncSetAttribute(
+              kernel, cudaFuncAttributePreferredSharedMemoryCarveout, carveout));
+          }
           if (cur.occupancy >= kTargetOccupancy) { break; }
         } else if (selected_perf.occupancy > 0.0) {
           // If we found a reasonable candidate on a previous iteration, and this one is not better,
